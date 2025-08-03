@@ -1,203 +1,255 @@
-# 🔧 Extrator de Dados de Folha de Pagamento
+# 🔧 PDF para Excel Updater
 
-Aplicação Python para extrair dados de PDFs de folha de pagamento e gerar planilhas estruturadas automaticamente.
+Aplicação Python para extrair dados de PDFs de folha de pagamento e preencher **diretamente** em planilhas Excel existentes (.xlsx/.xlsm), preservando formatação, fórmulas e macros VBA.
 
-## 📋 Funcionalidades
+## ✨ Funcionalidades Principais
 
-- ✅ Extração automática de dados de PDFs
-- ✅ Processamento offline (sem internet)
-- ✅ Geração de planilhas Excel (.xlsx) ou CSV
-- ✅ Mapeamento inteligente de códigos específicos
-- ✅ Filtro automático de folhas especiais (13º salário, férias)
-- ✅ Preenchimento automático de fórmulas
-- ✅ Período completo (Nov/12 a Nov/17) com linhas em branco para meses sem dados
+- ✅ **Preenche Excel existente** - não cria arquivo novo
+- ✅ **Preserva macros VBA** (.xlsm) e formatação
+- ✅ **Ignora campos fantasma** do PDF automaticamente
+- ✅ **Detecta arquivo Excel** com mesmo nome do PDF
+- ✅ **Mapeia datas** automaticamente (formato texto ou datetime)
+- ✅ **Processamento offline** (sem internet)
+- ✅ **Filtro inteligente** (ignora 13º salário, férias)
 
-## 🚀 Instalação
+## 📊 Mapeamento de Dados (v2.1)
+
+| PDF Código | Descrição | Excel Coluna | Fonte | Regras Especiais |
+|------------|-----------|--------------|-------|------------------|
+| `09090301` | SALARIO CONTRIB INSS | **B** (REMUNERAÇÃO RECEBIDA) | Último número | - |
+| `01003601` | PREMIO PROD. MENSAL | **X** (PRODUÇÃO) | Penúltimo número | ⚡ **Fallback**: Se vazio, usa último número |
+| `01007301` | HORAS EXT.100%-180 | **Y** (INDICE HE 100%) | Penúltimo número | 🕐 Suporta formato horas |
+| `01003501` | HORAS EXT.75%-180 | **AA** (INDICE HE 75%) | Penúltimo número | 🕐 Suporta formato horas |
+| `02007501` | DIFER.PROV. HORAS EXTRAS 75% | **AA** (INDICE HE 75%) | Penúltimo número | 🕐 Código alternativo |
+| `01009001` | ADIC.NOT.25%-180 | **AC** (INDICE ADC. NOT.) | Penúltimo número | 🕐 Suporta formato horas |
+
+### 🕐 Formato de Horas
+- **Detecção automática**: `06:34` → `06,34`
+- **Aplicável a**: HE 100%, HE 75%, ADIC. NOT.
+- **Conversão**: Substitui `:` por `,` automaticamente
+
+## 🚀 Instalação Rápida
+
+### Opção 1: Automática (Windows)
+```batch
+# Execute o setup automático
+setup.bat
+```
+
+### Opção 2: Manual
+```bash
+# 1. Verifique Python 3.7+
+python --version
+
+# 2. Instale dependências
+pip install -r requirements.txt
+
+# 3. Teste a instalação
+python test_instalacao.py
+```
 
 ### Pré-requisitos
-- Python 3.7 ou superior
-- pip (gerenciador de pacotes Python)
-
-### Passos de Instalação
-
-1. **Clone ou baixe os arquivos:**
-   ```bash
-   # Baixe os seguintes arquivos:
-   # - pdf_extractor.py
-   # - requirements.txt
-   # - exemplo_uso.py
-   ```
-
-2. **Instale as dependências:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Verifique a instalação:**
-   ```bash
-   python exemplo_uso.py
-   ```
+- **Python 3.7+** 
+- **pip** (incluído no Python)
 
 ## 💻 Como Usar
 
-### Uso Básico (Linha de Comando)
+### 📁 Estrutura de Arquivos
+```
+pasta_projeto/
+├── relatorio.pdf          # Seu PDF
+├── relatorio.xlsm          # Excel com MESMO NOME
+└── pdf_to_excel_updater.py # Aplicação
+```
 
+### 🎯 Uso Básico
 ```bash
-# Comando simples
-python pdf_extractor.py seu_arquivo.pdf
+# Comando mais simples (usa "LEVANTAMENTO DADOS" automaticamente)
+python pdf_to_excel_updater.py EdsonGoulartLeonardo2.pdf
 
-# Especificando arquivo de saída
-python pdf_extractor.py folha_pagamento.pdf -o resultado.xlsx
+# ⚠️ IMPORTANTE: Se "LEVANTAMENTO DADOS" não existir, especifique outra:
+python pdf_to_excel_updater.py arquivo.pdf -s "Nome_Da_Planilha_Correta"
 
-# Modo verboso (mostra detalhes do processamento)
-python pdf_extractor.py folha_pagamento.pdf -v
+# Modo verboso (mostra detalhes de debug)
+python pdf_to_excel_updater.py arquivo.pdf -v
+
+# Especifica Excel manualmente
+python pdf_to_excel_updater.py arquivo.pdf -e planilha.xlsm
 ```
 
-### Uso Programático
+### 📋 Exemplo Real
+```bash
+# Seus arquivos:
+# - EdsonGoulartLeonardo2.pdf
+# - EdsonGoulartLeonardo2.xlsm (com aba "LEVANTAMENTO DADOS")
 
-```python
-from pdf_extractor import PDFDataExtractor
+python pdf_to_excel_updater.py EdsonGoulartLeonardo2.pdf
 
-# Cria extrator
-extractor = PDFDataExtractor()
-
-# Processa PDF e gera planilha
-df = extractor.process_pdf("meu_arquivo.pdf", "resultado.xlsx")
-
-# Trabalha com os dados
-print(f"Extraídos {len(df)} períodos")
+# Output esperado:
+# 🔄 Processando: EdsonGoulartLeonardo2.pdf
+# ✅ Concluído: 54 períodos processados  
+# 📁 Arquivo: EdsonGoulartLeonardo2.xlsm (macros preservados)
 ```
 
-## 📊 Estrutura da Saída
+## 📈 Resultado Esperado (v2.1)
 
-A aplicação gera uma planilha com as seguintes colunas:
-
-| Coluna | Descrição | Fonte |
-|--------|-----------|-------|
-| PERÍODO | Mês/Ano (formato: nov/12) | Calculado |
-| REMUNERAÇÃO RECEBIDA | Código 09090301 | Coluna Valor |
-| PRODUÇÃO | Código 01003601 | Coluna Índice |
-| INDICE HE 100% | Código 01007301 | Coluna Índice |
-| FORMULA_1 | =Y[linha]/100 | Calculado |
-| INDICE HE 75% | Código 01003501 | Coluna Índice |
-| FORMULA_2 | =AC[linha]/10000 | Calculado |
-| INDICE ADC. NOT. | Código 01009001 | Coluna Índice |
-| FORMULA_3 | =AC[linha]/10000 | Calculado |
-
-## ⚙️ Regras de Mapeamento
-
-### Códigos Processados
-
-- **01003601** (PREMIO PROD. MENSAL) → Coluna PRODUÇÃO
-- **01007301** (HORAS EXT.100%-180) → Coluna INDICE HE 100%
-- **01009001** (ADIC.NOT.25%-180) → Coluna INDICE ADC. NOT.
-- **01003501** (HORAS EXT.75%-180) → Coluna INDICE HE 75%
-- **09090301** (SALARIO CONTRIB INSS) → Coluna REMUNERAÇÃO RECEBIDA
-
-### Filtros Aplicados
-
-- ❌ Folhas de 13º salário
-- ❌ Folhas de férias
-- ✅ Apenas folhas normais de pagamento
-
-## 📁 Estrutura de Arquivos
-
+### ✅ Sucesso Total:
 ```
-projeto/
-├── pdf_extractor.py      # Aplicação principal
-├── requirements.txt      # Dependências
-├── exemplo_uso.py       # Exemplos de uso
-├── README.md            # Esta documentação
-└── seus_pdfs/           # Seus arquivos PDF
+🔄 Processando: EdsonGoulartLeonardo2.pdf
+✅ Concluído: 54 períodos processados
+📁 Arquivo: EdsonGoulartLeonardo2.xlsm (macros preservados)
 ```
+
+### ⚠️ Sucesso Parcial:
+```
+🔄 Processando: EdsonGoulartLeonardo2.pdf  
+✅ Processamento concluído: 45/54 períodos atualizados
+❌ Falhas em 9 períodos:
+   out/12 (linha não encontrada)
+   nov/14 (células já preenchidas)
+   dez/15 (linha não encontrada)
+   ...
+📁 Arquivo: EdsonGoulartLeonardo2.xlsm (macros preservados)
+```
+
+### ❌ Erro Crítico:
+```
+🔄 Processando: arquivo.pdf
+❌ Erro: Planilha 'LEVANTAMENTO DADOS' não encontrada. Use -s para especificar outra planilha.
+```
+
+## 🔧 Funcionalidades Avançadas
+
+### 📊 Suporte a Múltiplos Formatos
+- **.xlsm** - Excel com macros (preserva VBA)
+- **.xlsx** - Excel padrão
+- **.xls** - Excel legado
+
+### 🎯 Detecção Inteligente de Planilhas
+1. Procura por nome: "LEVANTAMENTO DADOS"
+2. Procura por palavra-chave: "LEVANTAMENTO" ou "DADOS"
+3. Usa segunda aba como fallback
+4. Permite especificação manual com `-s`
+
+### 📅 Mapeamento de Datas Flexível
+- **Texto**: `nov/12`, `dez/12`, `jan/13`
+- **DateTime**: `2012-11-10 00:00:00`
+- **Serial Date**: Números do Excel (41224, 41254, etc.)
 
 ## 🐛 Solução de Problemas
 
-### Erro: "Arquivo não encontrado"
+### Erro: "Períodos não encontrados"
 ```bash
-# Verifique se o caminho está correto
-ls seu_arquivo.pdf
+# Diagnostique a planilha
+python diagnose_excel.py arquivo.xlsm
 
-# Use caminho absoluto se necessário
-python pdf_extractor.py /caminho/completo/para/arquivo.pdf
+# Especifique a planilha correta
+python pdf_to_excel_updater.py arquivo.pdf -s "Nome_Aba_Correta"
 ```
 
 ### Erro: "ModuleNotFoundError"
 ```bash
-# Instale as dependências
-pip install -r requirements.txt
+# Reinstale dependências
+pip install --upgrade -r requirements.txt
 
-# Se ainda der erro, tente:
-pip install pandas pdfplumber openpyxl
+# Ou instale individualmente
+pip install pandas openpyxl pdfplumber
 ```
 
-### PDF não está sendo processado corretamente
-- ✅ Verifique se o PDF não está protegido por senha
-- ✅ Confirme se o PDF contém texto (não é só imagem)
-- ✅ Use o modo verboso (`-v`) para ver detalhes
+### Erro: "Excel não encontrado"
+- ✅ Verifique se PDF e Excel têm **mesmo nome**
+- ✅ Confirme extensão: `.xlsm`, `.xlsx` ou `.xls`
+- ✅ Use `-e` para especificar caminho manualmente
 
-### Dados não aparecem na planilha
-- ✅ Verifique se os códigos estão presentes no PDF
-- ✅ Confirme se o formato do PDF está correto
-- ✅ Use modo verboso para ver quais dados foram encontrados
+### Dados não são extraídos
+- ✅ Use `-v` para modo verboso
+- ✅ Verifique se PDF contém os códigos corretos
+- ✅ Confirme que não é folha de férias/13º salário
 
-## 📈 Exemplo de Resultado
-
-A aplicação gera uma planilha similar a esta:
+## 📁 Arquivos do Projeto
 
 ```
-PERÍODO    | REMUNERAÇÃO | PRODUÇÃO | INDICE HE 100% | FORMULA_1  | ...
-nov/12     | 6176,41     | 1203,30  | 4224,00        | =Y5/100    | ...
-dez/12     | 5918,34     | 745,79   | 8058,00        | =Y6/100    | ...
-jan/13     | 4895,82     | 362,35   | 6405,00        | =Y7/100    | ...
-...        | ...         | ...      | ...            | ...        | ...
+pdf-extractor/
+├── pdf_to_excel_updater.py  # ← Aplicação principal
+├── requirements.txt         # ← Dependências
+├── setup.bat               # ← Instalação automática (Windows)
+├── test_instalacao.py      # ← Teste de instalação
+├── README.md               # ← Esta documentação
+└── diagnose_excel.py       # ← Ferramenta de diagnóstico
 ```
 
-## 🔧 Personalização
+## 🔒 Segurança e Preservação
 
-### Modificar Período de Extração
+### ✅ O que é Preservado
+- **Macros VBA** (.xlsm)
+- **Fórmulas existentes**
+- **Formatação** (cores, bordas, fontes)
+- **Estrutura** da planilha
+- **Dados existentes** (não sobrescreve)
 
-No arquivo `pdf_extractor.py`, altere os parâmetros:
-
-```python
-# Altere estas linhas na função generate_complete_table
-start_date: Tuple[int, int] = (11, 2012),  # (mês, ano) inicial
-end_date: Tuple[int, int] = (11, 2017)     # (mês, ano) final
-```
-
-### Adicionar Novos Códigos
-
-No arquivo `pdf_extractor.py`, modifique o dicionário `mapping_rules`:
-
-```python
-self.mapping_rules = {
-    # Códigos existentes...
-    'NOVO_CODIGO': {
-        'code': 'DESCRIÇÃO', 
-        'target': 'NOME_COLUNA', 
-        'source': 'indice' # ou 'valor'
-    }
-}
-```
+### ✅ O que é Preenchido
+- **Apenas** colunas B, X, Y, AA, AC
+- **Apenas** se célula estiver vazia
+- **Apenas** dados extraídos do PDF
 
 ## 📞 Suporte
 
-Se encontrar problemas:
+### Comandos de Diagnóstico
+```bash
+# Testa instalação
+python test_instalacao.py
 
-1. **Verifique os logs:** Use `-v` para modo verboso
-2. **Teste com exemplo:** Execute `python exemplo_uso.py`
-3. **Valide o PDF:** Certifique-se que contém os códigos esperados
-4. **Verifique dependências:** Execute `pip list` para ver pacotes instalados
+# Analisa estrutura do Excel
+python diagnose_excel.py arquivo.xlsm
 
-## 📝 Changelog
+# Testa com modo verboso
+python pdf_to_excel_updater.py arquivo.pdf -v
+```
 
-### Versão 1.0
-- ✅ Extração básica de PDFs
-- ✅ Mapeamento de códigos específicos
-- ✅ Geração de planilhas Excel/CSV
-- ✅ Filtro de folhas especiais
-- ✅ Período completo Nov/12 a Nov/17
+### Logs Importantes
+- `✓ Código encontrado:` - PDF sendo processado corretamente
+- `Período X/Y encontrado na linha Z` - Mapeamento funcionando
+- `Atualizado B5: None → 1234.56` - Dados sendo inseridos
+- `Excel .xlsm atualizado com N alterações` - Sucesso
+
+## 📝 Versões
+
+### v2.1 (Atual) - Conformidade Total com Regras de Negócio
+- ✅ **Código 02007501** adicionado (DIFER.PROV. HORAS EXTRAS 75%)
+- ✅ **Fallback inteligente** para PRODUÇÃO (índice → valor)
+- ✅ **Formato de horas** automático (`06:34` → `06,34`)
+- ✅ **Planilha padrão obrigatória** ("LEVANTAMENTO DADOS")
+- ✅ **Output simplificado** (resumo conciso, erros detalhados)
+- ✅ **Preservação total** de macros VBA e formatação
+
+### v2.0 (Anterior)
+- ✅ Preenche Excel existente (.xlsm/.xlsx)
+- ✅ Preserva macros VBA completamente
+- ✅ Mapeamento de datas automático
+- ✅ Detecção inteligente de planilhas
+- ✅ Compatibilidade com Windows
+
+### v1.0 (Legado)
+- ✅ Gerava novo Excel/CSV
+- ❌ Não preservava formatação
 
 ---
 
-**💡 Dica:** Mantenha seus PDFs organizados em uma pasta específica para facilitar o processamento em lote!
+## 🎯 Exemplo Completo
+
+```bash
+# 1. Prepare os arquivos
+EdsonGoulartLeonardo2.pdf       # ← Seu PDF
+EdsonGoulartLeonardo2.xlsm      # ← Excel existente
+
+# 2. Execute
+python pdf_to_excel_updater.py EdsonGoulartLeonardo2.pdf -s "LEVANTAMENTO DADOS" -v
+
+# 3. Resultado
+# ✓ 54 períodos processados
+# ✓ Colunas B, X, Y, AA, AC preenchidas
+# ✓ Macros VBA preservados
+# ✓ Formatação mantida
+```
+
+**💡 Dica:** Sempre mantenha backup do Excel original antes de processar!

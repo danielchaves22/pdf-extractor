@@ -1,0 +1,15 @@
+1. Considerar apenas o 'Tipo de folha': FOLHA NORMAL
+
+2. Obter da coluna ÍNDICE
+
+01003601 PREMIO PROD. MENSAL - Col destino: PRODUÇÃO (IMPORTANTE!! QUANDO NÃO HOUVER INFORMAÇÃO NO ÍNDICE, CONSIDERAR INFORMAÇÃO NO VALOR)
+01007301 HORAS EXT.100%-180  - Col destino: INDICE HE 100%
+01009001 ADIC.NOT.25%-180    - Col destino: INDICE ADC. NOT.
+01003501 HORAS EXT.75%-180   - Col destino: INDICE HE 75%
+02007501 DIFER.PROV. HORAS EXTRAS 75%  - Col destino: INDICE HE 75% (HE 75% pode ter um dos dois nomes)
+
+2. Obter da coluna VALOR
+
+09090301 SALARIO CONTRIB INSS - Col destino: REMUNERAÇÃO RECEBIDA
+
+3. Em determinado momento as colunas de HE e ADIC>NOT passam a ser horas (no formato, por exemplo, '06:34'). Quando começar, simplesmente substituir ':' por ','

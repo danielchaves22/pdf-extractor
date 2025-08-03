@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PDF para Excel Updater - Preenche Excel Existente (.xlsx/.xlsm)
+PDF para Excel Updater - Processamento com Diretório de Trabalho
 ================================================================
 
-Esta versão detecta um arquivo Excel com mesmo nome do PDF e preenche
-diretamente nas colunas corretas, preservando formatação, fórmulas e macros.
+Versão 3.0 - Modo único com diretório de trabalho configurado via .env
 
-Versão 2.1 - Conforme regras de negócio + Logs Melhorados (Windows Compatible)
+Funcionalidades:
+- Diretório de trabalho obrigatório configurado via MODELO_DIR no .env
+- Busca PDF e MODELO.xlsm no diretório de trabalho
+- Cria pasta DADOS no diretório de trabalho
+- Pode ser executado de qualquer local desde que .env esteja configurado
 
-Estrutura da planilha:
-- Coluna A: PERÍODO (não preenche)
-- Coluna B: REMUNERAÇÃO RECEBIDA  
-- Coluna X: PRODUÇÃO
-- Coluna Y: INDICE HE 100%
-- Coluna AA: INDICE HE 75% 
-- Coluna AC: INDICE ADC. NOT.
+Estrutura esperada no diretório de trabalho:
+├── MODELO.xlsm          # Planilha modelo (obrigatório)
+├── arquivo.pdf          # PDF a processar
+└── DADOS/               # Pasta criada automaticamente
+    └── arquivo.xlsm     # Resultado processado
+
+Configuração .env:
+MODELO_DIR=C:\\caminho\\para\\diretorio\\de\\trabalho
 
 Autor: Sistema de Extração Automatizada
 Data: 2025
@@ -30,25 +34,28 @@ import logging
 from typing import Dict, List, Optional, Tuple
 import argparse
 from openpyxl import load_workbook
+import os
+import shutil
+from dotenv import load_dotenv
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class PDFToExcelUpdater:
-    """Classe para atualizar Excel existente com dados do PDF"""
+    """Classe para processar PDF usando diretório de trabalho configurado"""
     
     def __init__(self):
         """Inicializa o updater com as regras de mapeamento"""
         
-        # Regras de mapeamento para colunas específicas do Excel (v2.1)
+        # Regras de mapeamento para colunas específicas do Excel
         self.mapping_rules = {
             # Obter da coluna ÍNDICE (com fallback especial para PRODUÇÃO)
             '01003601': {'code': 'PREMIO PROD. MENSAL', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True},
             '01007301': {'code': 'HORAS EXT.100%-180', 'excel_column': 'Y', 'source': 'indice'},
             '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AC', 'source': 'indice'},
             '01003501': {'code': 'HORAS EXT.75%-180', 'excel_column': 'AA', 'source': 'indice'},
-            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AA', 'source': 'indice'},  # NOVO
+            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AA', 'source': 'indice'},
             
             # Obter da coluna VALOR
             '09090301': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor'}
@@ -56,6 +63,9 @@ class PDFToExcelUpdater:
         
         # Planilha preferida (pode ser especificada externamente)
         self.preferred_sheet = None
+        
+        # Diretório de trabalho
+        self.trabalho_dir = None
         
         # Meses em português para conversão
         self.meses_pt = {
@@ -70,22 +80,81 @@ class PDFToExcelUpdater:
             'jul': 7, 'ago': 8, 'set': 9, 'out': 10, 'nov': 11, 'dez': 12
         }
 
-    def find_excel_file(self, pdf_path: str) -> Optional[str]:
-        """Procura arquivo Excel com mesmo nome do PDF"""
-        pdf_path_obj = Path(pdf_path)
-        base_name = pdf_path_obj.stem
-        directory = pdf_path_obj.parent
+    def load_env_config(self):
+        """Carrega configurações do arquivo .env"""
+        # Carrega o arquivo .env se existir
+        if Path('.env').exists():
+            load_dotenv()
+            logger.debug("Arquivo .env carregado")
+        else:
+            raise ValueError("Arquivo .env não encontrado. Configure MODELO_DIR no arquivo .env")
         
-        # Procura por diferentes extensões (incluindo .xlsm para macros)
-        possible_extensions = ['.xlsm', '.xlsx', '.xls']
+        # Obtém o diretório de trabalho
+        self.trabalho_dir = os.getenv('MODELO_DIR')
+        if not self.trabalho_dir:
+            raise ValueError("MODELO_DIR não está definido no arquivo .env")
         
-        for ext in possible_extensions:
-            excel_path = directory / f"{base_name}{ext}"
-            if excel_path.exists():
-                logger.debug(f"Arquivo Excel encontrado: {excel_path}")
-                return str(excel_path)
+        # Valida se diretório existe
+        trabalho_dir_path = Path(self.trabalho_dir)
+        if not trabalho_dir_path.exists():
+            raise ValueError(f"Diretório de trabalho não encontrado: {self.trabalho_dir}")
         
-        return None
+        logger.debug(f"Diretório de trabalho configurado: {self.trabalho_dir}")
+
+    def find_pdf_file(self, pdf_filename: str) -> str:
+        """Procura arquivo PDF no diretório de trabalho"""
+        trabalho_dir_path = Path(self.trabalho_dir)
+        
+        # Se pdf_filename já tem caminho, usa direto
+        if Path(pdf_filename).is_absolute() or '/' in pdf_filename or '\\' in pdf_filename:
+            if Path(pdf_filename).exists():
+                return pdf_filename
+            else:
+                raise ValueError(f"Arquivo PDF não encontrado: {pdf_filename}")
+        
+        # Procura no diretório de trabalho
+        pdf_path = trabalho_dir_path / pdf_filename
+        if pdf_path.exists():
+            logger.debug(f"PDF encontrado no diretório de trabalho: {pdf_path}")
+            return str(pdf_path)
+        
+        # Tenta com extensão .pdf se não foi fornecida
+        if not pdf_filename.lower().endswith('.pdf'):
+            pdf_path_with_ext = trabalho_dir_path / f"{pdf_filename}.pdf"
+            if pdf_path_with_ext.exists():
+                logger.debug(f"PDF encontrado (com extensão): {pdf_path_with_ext}")
+                return str(pdf_path_with_ext)
+        
+        raise ValueError(f"Arquivo PDF '{pdf_filename}' não encontrado no diretório de trabalho: {self.trabalho_dir}")
+
+    def copy_modelo_to_dados(self, pdf_path: str) -> str:
+        """Copia o arquivo modelo para a pasta DADOS com nome baseado no PDF"""
+        
+        trabalho_dir_path = Path(self.trabalho_dir)
+        
+        # Procura pelo arquivo MODELO.xlsm no diretório de trabalho
+        modelo_file = trabalho_dir_path / "MODELO.xlsm"
+        if not modelo_file.exists():
+            raise ValueError(f"Arquivo MODELO.xlsm não encontrado no diretório de trabalho: {self.trabalho_dir}")
+        
+        logger.debug(f"Arquivo modelo encontrado: {modelo_file}")
+        
+        # Cria pasta DADOS no diretório de trabalho
+        dados_dir = trabalho_dir_path / "DADOS"
+        dados_dir.mkdir(exist_ok=True)
+        logger.debug(f"Pasta DADOS: {dados_dir}")
+        
+        # Define nome do arquivo de destino baseado no PDF
+        pdf_base_name = Path(pdf_path).stem
+        destino_file = dados_dir / f"{pdf_base_name}.xlsm"
+        
+        # Copia o modelo para o destino
+        try:
+            shutil.copy2(modelo_file, destino_file)
+            logger.debug(f"Modelo copiado: {modelo_file} -> {destino_file}")
+            return str(destino_file)
+        except Exception as e:
+            raise ValueError(f"Erro ao copiar modelo: {e}")
 
     def extract_text_from_pdf(self, pdf_path: str) -> List[str]:
         """Extrai texto de todas as páginas do PDF"""
@@ -423,7 +492,7 @@ class PDFToExcelUpdater:
                 else:
                     raise ValueError(f"Planilha especificada '{self.preferred_sheet}' não encontrada")
             else:
-                # NOVA REGRA: "LEVANTAMENTO DADOS" é obrigatória se não especificada
+                # Regra: "LEVANTAMENTO DADOS" é obrigatória se não especificada
                 if 'LEVANTAMENTO DADOS' in workbook.sheetnames:
                     worksheet = workbook['LEVANTAMENTO DADOS']
                     logger.debug(f"Usando planilha padrão: {worksheet.title}")
@@ -501,15 +570,20 @@ class PDFToExcelUpdater:
             logger.error(f"Erro ao atualizar Excel: {e}")
             raise
 
-    def process_pdf_to_excel(self, pdf_path: str, excel_path: str = None):
-        """Processa PDF e atualiza Excel existente"""
-        logger.debug("Iniciando processamento PDF para Excel...")
+    def process_pdf(self, pdf_filename: str):
+        """Processa PDF usando diretório de trabalho configurado"""
+        logger.debug("Iniciando processamento PDF...")
         
-        # Procura arquivo Excel se não especificado
-        if not excel_path:
-            excel_path = self.find_excel_file(pdf_path)
-            if not excel_path:
-                raise ValueError(f"Arquivo Excel não encontrado para: {Path(pdf_path).stem}")
+        # Carrega configuração obrigatória
+        self.load_env_config()
+        
+        # Encontra PDF no diretório de trabalho
+        pdf_path = self.find_pdf_file(pdf_filename)
+        logger.info(f"PDF encontrado: {Path(pdf_path).name}")
+        
+        # Copia modelo e cria arquivo de destino
+        excel_path = self.copy_modelo_to_dados(pdf_path)
+        logger.info(f"Modelo copiado para: DADOS/{Path(excel_path).name}")
         
         # Extrai dados do PDF
         pages_text = self.extract_text_from_pdf(pdf_path)
@@ -559,7 +633,7 @@ class PDFToExcelUpdater:
             periodos_sem_data = [periodo for _, periodo in pages_sem_data]
             logger.info(f"[AVISO] {len(pages_sem_data)} páginas com período mas sem dados: {periodos_sem_data}")
         
-        # Atualiza Excel existente
+        # Atualiza Excel
         if extracted_data:
             logger.debug(f"\n--- Atualizando Excel ---")
             logger.debug(f"Períodos a processar: {len(extracted_data)}")
@@ -569,13 +643,12 @@ class PDFToExcelUpdater:
             if pages_sem_periodo and pages_sem_data:
                 logger.warning("Possíveis causas: formato de data não reconhecido ou códigos não encontrados")
         
-        return extracted_data
+        return extracted_data, excel_path
 
 def main():
     """Função principal da aplicação"""
-    parser = argparse.ArgumentParser(description='PDF para Excel Updater v2.1')
-    parser.add_argument('pdf_path', help='Caminho para o arquivo PDF')
-    parser.add_argument('-e', '--excel', help='Caminho do arquivo Excel (opcional)')
+    parser = argparse.ArgumentParser(description='PDF para Excel Updater v3.0 - Diretório de Trabalho')
+    parser.add_argument('pdf_filename', help='Nome do arquivo PDF (será buscado no diretório de trabalho)')
     parser.add_argument('-s', '--sheet', help='Nome da planilha específica (padrão: "LEVANTAMENTO DADOS")')
     parser.add_argument('-v', '--verbose', action='store_true', help='Modo verboso')
     
@@ -587,11 +660,6 @@ def main():
         # Modo silencioso - apenas INFO e WARNING/ERROR
         logging.getLogger().setLevel(logging.INFO)
     
-    # Valida arquivo de entrada
-    if not Path(args.pdf_path).exists():
-        print(f"ERRO: Arquivo PDF não encontrado: {args.pdf_path}")
-        return 1
-    
     try:
         # Cria updater e processa
         updater = PDFToExcelUpdater()
@@ -600,23 +668,16 @@ def main():
         if args.sheet:
             updater.preferred_sheet = args.sheet
         
-        print(f"Processando: {Path(args.pdf_path).name}")
+        print(f"Processando: {args.pdf_filename}")
         
-        extracted_data = updater.process_pdf_to_excel(args.pdf_path, args.excel)
+        extracted_data, excel_path = updater.process_pdf(args.pdf_filename)
         
-        # Detecta tipo de arquivo Excel usado
-        excel_used = args.excel if args.excel else updater.find_excel_file(args.pdf_path)
-        
-        # Resumo final simplificado
+        # Resumo final
         if extracted_data:
             total_extracted = len(extracted_data)
             print(f"OK: Concluído: {total_extracted} períodos processados")
-            if excel_used:
-                excel_name = Path(excel_used).name
-                if excel_used.lower().endswith('.xlsm'):
-                    print(f"Arquivo: {excel_name} (macros preservados)")
-                else:
-                    print(f"Arquivo: {excel_name}")
+            excel_name = Path(excel_path).name
+            print(f"Arquivo criado: DADOS/{excel_name}")
         else:
             print("ERRO: Nenhum dado foi extraído do PDF!")
             print("Dica: Use -v para diagnóstico detalhado")

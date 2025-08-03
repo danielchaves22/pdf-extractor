@@ -1,203 +1,205 @@
-# 🔧 Extrator de Dados de Folha de Pagamento
+@echo off
+:: ================================================================
+:: PDF para Excel Updater - Setup Automatizado v2.2
+:: ================================================================
+:: Instala todas as dependencias necessarias para um novo ambiente
+:: ================================================================
 
-Aplicação Python para extrair dados de PDFs de folha de pagamento e gerar planilhas estruturadas automaticamente.
+echo.
+echo ==========================================
+echo  PDF para Excel Updater - Setup v2.2
+echo ==========================================
+echo.
 
-## 📋 Funcionalidades
+:: Verifica se Python esta instalado
+echo [1/6] Verificando instalacao do Python...
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERRO: Python nao esta instalado ou nao esta no PATH
+    echo.
+    echo Baixe e instale Python em: https://www.python.org/downloads/
+    echo Certifique-se de marcar "Add Python to PATH" durante a instalacao
+    pause
+    exit /b 1
+)
 
-- ✅ Extração automática de dados de PDFs
-- ✅ Processamento offline (sem internet)
-- ✅ Geração de planilhas Excel (.xlsx) ou CSV
-- ✅ Mapeamento inteligente de códigos específicos
-- ✅ Filtro automático de folhas especiais (13º salário, férias)
-- ✅ Preenchimento automático de fórmulas
-- ✅ Período completo (Nov/12 a Nov/17) com linhas em branco para meses sem dados
+for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
+echo OK: Python %PYTHON_VERSION% encontrado
 
-## 🚀 Instalação
+:: Verifica se pip esta funcionando
+echo.
+echo [2/6] Verificando pip...
+pip --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ERRO: pip nao esta disponivel
+    echo Reinstale Python com pip incluido
+    pause
+    exit /b 1
+)
 
-### Pré-requisitos
-- Python 3.7 ou superior
-- pip (gerenciador de pacotes Python)
+for /f "tokens=2" %%i in ('pip --version 2^>^&1') do set PIP_VERSION=%%i
+echo OK: pip %PIP_VERSION% funcionando
 
-### Passos de Instalação
+:: Atualiza pip para versao mais recente
+echo.
+echo [3/6] Atualizando pip...
+python -m pip install --upgrade pip --quiet
+if %errorlevel% neq 0 (
+    echo AVISO: Nao foi possivel atualizar pip, continuando...
+) else (
+    echo OK: pip atualizado
+)
 
-1. **Clone ou baixe os arquivos:**
-   ```bash
-   # Baixe os seguintes arquivos:
-   # - pdf_extractor.py
-   # - requirements.txt
-   # - exemplo_uso.py
-   ```
+:: Instala dependencias principais
+echo.
+echo [4/6] Instalando dependencias principais...
 
-2. **Instale as dependências:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+echo   - Instalando pandas...
+pip install pandas>=1.5.0 --quiet
+if %errorlevel% neq 0 (
+    echo ERRO: Falha ao instalar pandas
+    goto :error
+)
 
-3. **Verifique a instalação:**
-   ```bash
-   python exemplo_uso.py
-   ```
+echo   - Instalando openpyxl...
+pip install openpyxl>=3.0.0 --quiet
+if %errorlevel% neq 0 (
+    echo ERRO: Falha ao instalar openpyxl
+    goto :error
+)
 
-## 💻 Como Usar
+echo   - Instalando pdfplumber...
+pip install pdfplumber>=0.7.0 --quiet
+if %errorlevel% neq 0 (
+    echo ERRO: Falha ao instalar pdfplumber
+    goto :error
+)
 
-### Uso Básico (Linha de Comando)
+echo   - Instalando python-dotenv...
+pip install python-dotenv>=1.0.0 --quiet
+if %errorlevel% neq 0 (
+    echo ERRO: Falha ao instalar python-dotenv
+    goto :error
+)
 
-```bash
-# Comando simples
-python pdf_extractor.py seu_arquivo.pdf
+echo OK: Todas as dependencias instaladas com sucesso
 
-# Especificando arquivo de saída
-python pdf_extractor.py folha_pagamento.pdf -o resultado.xlsx
+:: Cria arquivo .env exemplo se nao existir
+echo.
+echo [5/6] Configurando arquivo .env...
+if not exist ".env" (
+    echo # Configuracao do PDF para Excel Updater v3.0 > .env
+    echo # ===================================================== >> .env
+    echo # DIRETORIO DE TRABALHO (obrigatorio) >> .env
+    echo # >> .env
+    echo # O MODELO_DIR agora e o diretorio de trabalho onde devem estar: >> .env
+    echo # - MODELO.xlsm (planilha modelo) >> .env
+    echo # - arquivo.pdf (PDF a processar) >> .env
+    echo # - DADOS/ (pasta criada automaticamente para resultados) >> .env
+    echo. >> .env
+    echo # Use barras normais / ou escape as barras invertidas \\ >> .env
+    echo MODELO_DIR=C:/trabalho/folhas_pagamento >> .env
+    echo # ou >> .env
+    echo # MODELO_DIR=C:\\trabalho\\folhas_pagamento >> .env
+    echo. >> .env
+    echo # Exemplos de configuracao: >> .env
+    echo # MODELO_DIR=D:/empresa/processamento_folhas >> .env
+    echo # MODELO_DIR=./diretorio_trabalho >> .env
+    echo # MODELO_DIR=../folhas_compartilhadas >> .env
+    
+    echo OK: Arquivo .env criado com configuracao exemplo
+    echo     Edite o arquivo .env para configurar o diretorio de trabalho
+) else (
+    echo OK: Arquivo .env ja existe
+)
 
-# Modo verboso (mostra detalhes do processamento)
-python pdf_extractor.py folha_pagamento.pdf -v
-```
+:: Verifica se script principal existe
+echo.
+echo [6/6] Verificando arquivos...
+if not exist "pdf_to_excel_updater.py" (
+    echo AVISO: pdf_to_excel_updater.py nao encontrado na pasta atual
+    echo        Certifique-se de que este arquivo esteja na mesma pasta do setup.bat
+) else (
+    echo OK: pdf_to_excel_updater.py encontrado
+)
 
-### Uso Programático
+:: Testa instalacao
+echo.
+echo ==========================================
+echo  Teste de Instalacao
+echo ==========================================
+echo.
 
-```python
-from pdf_extractor import PDFDataExtractor
+echo Testando imports das bibliotecas...
+python -c "import pandas; print('  pandas:', pandas.__version__)" 2>nul
+if %errorlevel% neq 0 (
+    echo ERRO: pandas nao pode ser importado
+    goto :error
+)
 
-# Cria extrator
-extractor = PDFDataExtractor()
+python -c "import openpyxl; print('  openpyxl:', openpyxl.__version__)" 2>nul
+if %errorlevel% neq 0 (
+    echo ERRO: openpyxl nao pode ser importado
+    goto :error
+)
 
-# Processa PDF e gera planilha
-df = extractor.process_pdf("meu_arquivo.pdf", "resultado.xlsx")
+python -c "import pdfplumber; print('  pdfplumber:', pdfplumber.__version__)" 2>nul
+if %errorlevel% neq 0 (
+    echo ERRO: pdfplumber nao pode ser importado
+    goto :error
+)
 
-# Trabalha com os dados
-print(f"Extraídos {len(df)} períodos")
-```
+python -c "import dotenv; print('  python-dotenv: OK')" 2>nul
+if %errorlevel% neq 0 (
+    echo ERRO: python-dotenv nao pode ser importado
+    goto :error
+)
 
-## 📊 Estrutura da Saída
+echo.
+echo ==========================================
+echo  INSTALACAO CONCLUIDA COM SUCESSO!
+echo ==========================================
+echo.
+echo Como usar (v3.0 - Diretorio de Trabalho):
+echo.
+echo  1. Configure o diretorio de trabalho no .env:
+echo     MODELO_DIR=C:/seu/diretorio/de/trabalho
+echo.
+echo  2. Coloque no diretorio de trabalho:
+echo     - MODELO.xlsm (planilha modelo)
+echo     - arquivo.pdf (PDF a processar)
+echo.
+echo  3. Execute de qualquer local:
+echo     python pdf_to_excel_updater.py arquivo.pdf
+echo.
+echo  4. O resultado aparecera em:
+echo     DIRETORIO_TRABALHO/DADOS/arquivo.xlsm
+echo.
+echo Configuracao obrigatoria:
+echo  - Edite o arquivo .env para configurar MODELO_DIR
+echo  - Coloque MODELO.xlsm no diretorio de trabalho
+echo.
+echo Para mais informacoes use: python pdf_to_excel_updater.py --help
+echo.
+goto :end
 
-A aplicação gera uma planilha com as seguintes colunas:
+:error
+echo.
+echo ==========================================
+echo  ERRO NA INSTALACAO
+echo ==========================================
+echo.
+echo Algumas dependencias nao puderam ser instaladas.
+echo.
+echo Solucoes:
+echo  1. Execute como Administrador
+echo  2. Verifique conexao com internet
+echo  3. Tente instalar manualmente:
+echo     pip install pandas openpyxl pdfplumber python-dotenv
+echo.
+pause
+exit /b 1
 
-| Coluna | Descrição | Fonte |
-|--------|-----------|-------|
-| PERÍODO | Mês/Ano (formato: nov/12) | Calculado |
-| REMUNERAÇÃO RECEBIDA | Código 09090301 | Coluna Valor |
-| PRODUÇÃO | Código 01003601 | Coluna Índice |
-| INDICE HE 100% | Código 01007301 | Coluna Índice |
-| FORMULA_1 | =Y[linha]/100 | Calculado |
-| INDICE HE 75% | Código 01003501 | Coluna Índice |
-| FORMULA_2 | =AC[linha]/10000 | Calculado |
-| INDICE ADC. NOT. | Código 01009001 | Coluna Índice |
-| FORMULA_3 | =AC[linha]/10000 | Calculado |
-
-## ⚙️ Regras de Mapeamento
-
-### Códigos Processados
-
-- **01003601** (PREMIO PROD. MENSAL) → Coluna PRODUÇÃO
-- **01007301** (HORAS EXT.100%-180) → Coluna INDICE HE 100%
-- **01009001** (ADIC.NOT.25%-180) → Coluna INDICE ADC. NOT.
-- **01003501** (HORAS EXT.75%-180) → Coluna INDICE HE 75%
-- **09090301** (SALARIO CONTRIB INSS) → Coluna REMUNERAÇÃO RECEBIDA
-
-### Filtros Aplicados
-
-- ❌ Folhas de 13º salário
-- ❌ Folhas de férias
-- ✅ Apenas folhas normais de pagamento
-
-## 📁 Estrutura de Arquivos
-
-```
-projeto/
-├── pdf_extractor.py      # Aplicação principal
-├── requirements.txt      # Dependências
-├── exemplo_uso.py       # Exemplos de uso
-├── README.md            # Esta documentação
-└── seus_pdfs/           # Seus arquivos PDF
-```
-
-## 🐛 Solução de Problemas
-
-### Erro: "Arquivo não encontrado"
-```bash
-# Verifique se o caminho está correto
-ls seu_arquivo.pdf
-
-# Use caminho absoluto se necessário
-python pdf_extractor.py /caminho/completo/para/arquivo.pdf
-```
-
-### Erro: "ModuleNotFoundError"
-```bash
-# Instale as dependências
-pip install -r requirements.txt
-
-# Se ainda der erro, tente:
-pip install pandas pdfplumber openpyxl
-```
-
-### PDF não está sendo processado corretamente
-- ✅ Verifique se o PDF não está protegido por senha
-- ✅ Confirme se o PDF contém texto (não é só imagem)
-- ✅ Use o modo verboso (`-v`) para ver detalhes
-
-### Dados não aparecem na planilha
-- ✅ Verifique se os códigos estão presentes no PDF
-- ✅ Confirme se o formato do PDF está correto
-- ✅ Use modo verboso para ver quais dados foram encontrados
-
-## 📈 Exemplo de Resultado
-
-A aplicação gera uma planilha similar a esta:
-
-```
-PERÍODO    | REMUNERAÇÃO | PRODUÇÃO | INDICE HE 100% | FORMULA_1  | ...
-nov/12     | 6176,41     | 1203,30  | 4224,00        | =Y5/100    | ...
-dez/12     | 5918,34     | 745,79   | 8058,00        | =Y6/100    | ...
-jan/13     | 4895,82     | 362,35   | 6405,00        | =Y7/100    | ...
-...        | ...         | ...      | ...            | ...        | ...
-```
-
-## 🔧 Personalização
-
-### Modificar Período de Extração
-
-No arquivo `pdf_extractor.py`, altere os parâmetros:
-
-```python
-# Altere estas linhas na função generate_complete_table
-start_date: Tuple[int, int] = (11, 2012),  # (mês, ano) inicial
-end_date: Tuple[int, int] = (11, 2017)     # (mês, ano) final
-```
-
-### Adicionar Novos Códigos
-
-No arquivo `pdf_extractor.py`, modifique o dicionário `mapping_rules`:
-
-```python
-self.mapping_rules = {
-    # Códigos existentes...
-    'NOVO_CODIGO': {
-        'code': 'DESCRIÇÃO', 
-        'target': 'NOME_COLUNA', 
-        'source': 'indice' # ou 'valor'
-    }
-}
-```
-
-## 📞 Suporte
-
-Se encontrar problemas:
-
-1. **Verifique os logs:** Use `-v` para modo verboso
-2. **Teste com exemplo:** Execute `python exemplo_uso.py`
-3. **Valide o PDF:** Certifique-se que contém os códigos esperados
-4. **Verifique dependências:** Execute `pip list` para ver pacotes instalados
-
-## 📝 Changelog
-
-### Versão 1.0
-- ✅ Extração básica de PDFs
-- ✅ Mapeamento de códigos específicos
-- ✅ Geração de planilhas Excel/CSV
-- ✅ Filtro de folhas especiais
-- ✅ Período completo Nov/12 a Nov/17
-
----
-
-**💡 Dica:** Mantenha seus PDFs organizados em uma pasta específica para facilitar o processamento em lote!
+:end
+echo Pressione qualquer tecla para continuar...
+pause >nul

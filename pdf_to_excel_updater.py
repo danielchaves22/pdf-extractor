@@ -4,20 +4,21 @@
 PDF para Excel Updater - Processamento com Diretório de Trabalho
 ================================================================
 
-Versão 3.1 - Seleção gráfica de arquivo + Diretório de trabalho
+Versão 3.2 - Detecção de Nome da Pessoa + Seleção gráfica de arquivo
 
 Funcionalidades:
 - Diretório de trabalho obrigatório configurado via MODELO_DIR no .env
 - Busca PDF e MODELO.xlsm no diretório de trabalho
 - Cria pasta DADOS no diretório de trabalho
 - Interface gráfica para seleção de PDF (opcional)
+- NOVO: Detecta nome da pessoa no PDF e usa para nomear arquivo final
 - Pode ser executado de qualquer local desde que .env esteja configurado
 
 Estrutura esperada no diretório de trabalho:
 ├── MODELO.xlsm          # Planilha modelo (obrigatório)
 ├── arquivo.pdf          # PDF a processar
 └── DADOS/               # Pasta criada automaticamente
-    └── arquivo.xlsm     # Resultado processado
+    └── ELIAS_DE_ALMEIDA_MEIRA_FILHO.xlsm  # Resultado com nome da pessoa
 
 Configuração .env:
 MODELO_DIR=C:\\caminho\\para\\diretorio\\de\\trabalho
@@ -157,6 +158,137 @@ class PDFToExcelUpdater:
             logger.error(f"Erro ao abrir diálogo de seleção: {e}")
             return None
 
+    def extract_person_name_from_pdf(self, pdf_path: str) -> Optional[str]:
+        """Extrai o nome da pessoa da primeira página do PDF"""
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                if not pdf.pages:
+                    logger.debug("PDF não possui páginas")
+                    return None
+                
+                # Extrai texto apenas da primeira página
+                first_page = pdf.pages[0]
+                text = first_page.extract_text()
+                
+                if not text:
+                    logger.debug("Primeira página não possui texto extraível")
+                    return None
+                
+                logger.debug("Procurando nome na primeira página do PDF...")
+                
+                # Procura por padrões de nome
+                name_patterns = [
+                    r'Nome\s*:\s*([A-ZÁÇÃÂÊÔÉÍÓÚÀÈÌÒÙ\s]+?)(?:\n|$|[A-Z]{2,}:)',
+                    r'NOME\s*:\s*([A-ZÁÇÃÂÊÔÉÍÓÚÀÈÌÒÙ\s]+?)(?:\n|$|[A-Z]{2,}:)',
+                    r'Nome\s*:\s*(.+?)(?:\n|Endereço|CPF|RG)',
+                    r'NOME\s*:\s*(.+?)(?:\n|ENDEREÇO|CPF|RG)',
+                    r'Nome\s*:\s*(.+?)$',
+                    r'NOME\s*:\s*(.+?)$'
+                ]
+                
+                lines = text.split('\n')
+                
+                # Debug: mostra as primeiras linhas para análise
+                logger.debug("Primeiras 10 linhas da página:")
+                for i, line in enumerate(lines[:10]):
+                    line_clean = line.strip()
+                    if line_clean:
+                        logger.debug(f"  {i+1}: {line_clean}")
+                
+                # Procura linha por linha
+                for line_num, line in enumerate(lines):
+                    line_clean = line.strip()
+                    
+                    # Procura padrões na linha atual
+                    for pattern_num, pattern in enumerate(name_patterns):
+                        match = re.search(pattern, line_clean, re.IGNORECASE)
+                        if match:
+                            nome_bruto = match.group(1).strip()
+                            
+                            # Limpa e valida o nome
+                            nome_limpo = self.clean_extracted_name(nome_bruto)
+                            
+                            if nome_limpo:
+                                logger.debug(f"Nome encontrado (padrão {pattern_num+1}, linha {line_num+1}): '{nome_bruto}' -> '{nome_limpo}'")
+                                return nome_limpo
+                            else:
+                                logger.debug(f"Nome descartado (padrão {pattern_num+1}, linha {line_num+1}): '{nome_bruto}' (inválido após limpeza)")
+                
+                logger.debug("Nenhum nome válido encontrado na primeira página")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Erro ao extrair nome do PDF: {e}")
+            return None
+
+    def clean_extracted_name(self, nome_bruto: str) -> Optional[str]:
+        """Limpa e valida o nome extraído"""
+        if not nome_bruto:
+            return None
+        
+        # Remove espaços extras e converte para maiúsculo
+        nome = nome_bruto.strip().upper()
+        
+        # Remove caracteres não desejados
+        nome = re.sub(r'[^\w\s]', ' ', nome)
+        
+        # Remove múltiplos espaços
+        nome = re.sub(r'\s+', ' ', nome).strip()
+        
+        # Validações básicas
+        if len(nome) < 3:  # Muito curto
+            return None
+        
+        if len(nome) > 100:  # Muito longo
+            return None
+        
+        # Verifica se não é só números
+        if nome.replace(' ', '').isdigit():
+            return None
+        
+        # Verifica se tem pelo menos algumas letras
+        if not re.search(r'[A-ZÁÇÃÂÊÔÉÍÓÚÀÈÌÒÙ]', nome):
+            return None
+        
+        # Remove palavras comuns que podem aparecer
+        palavras_excluir = ['NOME', 'FUNCIONARIO', 'FUNCIONÁRIO', 'TRABALHADOR', 'COLABORADOR', 'EMPREGADO']
+        palavras = nome.split()
+        palavras_filtradas = [p for p in palavras if p not in palavras_excluir]
+        
+        if not palavras_filtradas:
+            return None
+        
+        nome_final = ' '.join(palavras_filtradas)
+        
+        # Segunda validação
+        if len(nome_final) < 3:
+            return None
+        
+        return nome_final
+
+    def normalize_filename(self, nome: str) -> str:
+        """Converte nome da pessoa para formato de arquivo válido"""
+        # Substitui espaços por underscore
+        filename = nome.replace(' ', '_')
+        
+        # Remove/substitui caracteres inválidos para nome de arquivo
+        filename = re.sub(r'[<>:"/\\|?*]', '', filename)
+        
+        # Remove caracteres especiais extras
+        filename = re.sub(r'[^\w_]', '', filename)
+        
+        # Remove underscores múltiplos
+        filename = re.sub(r'_+', '_', filename)
+        
+        # Remove underscores no início e fim
+        filename = filename.strip('_')
+        
+        # Limita tamanho (nomes de arquivo muito longos podem dar problema)
+        if len(filename) > 100:
+            filename = filename[:100].rstrip('_')
+        
+        return filename
+
     def find_pdf_file(self, pdf_filename: str) -> str:
         """Procura arquivo PDF no diretório de trabalho"""
         trabalho_dir_path = Path(self.trabalho_dir)
@@ -183,8 +315,8 @@ class PDFToExcelUpdater:
         
         raise ValueError(f"Arquivo PDF '{pdf_filename}' não encontrado no diretório de trabalho: {self.trabalho_dir}")
 
-    def copy_modelo_to_dados(self, pdf_path: str) -> str:
-        """Copia o arquivo modelo para a pasta DADOS com nome baseado no PDF"""
+    def copy_modelo_to_dados(self, pdf_path: str, custom_name: Optional[str] = None) -> str:
+        """Copia o arquivo modelo para a pasta DADOS com nome personalizado ou baseado no PDF"""
         
         trabalho_dir_path = Path(self.trabalho_dir)
         
@@ -200,9 +332,17 @@ class PDFToExcelUpdater:
         dados_dir.mkdir(exist_ok=True)
         logger.debug(f"Pasta DADOS: {dados_dir}")
         
-        # Define nome do arquivo de destino baseado no PDF
-        pdf_base_name = Path(pdf_path).stem
-        destino_file = dados_dir / f"{pdf_base_name}.xlsm"
+        # Define nome do arquivo de destino
+        if custom_name:
+            # Usa nome da pessoa detectado
+            base_name = self.normalize_filename(custom_name)
+            logger.debug(f"Usando nome personalizado: '{custom_name}' -> '{base_name}'")
+        else:
+            # Usa nome baseado no PDF como fallback
+            base_name = Path(pdf_path).stem
+            logger.debug(f"Usando nome baseado no PDF: '{base_name}'")
+        
+        destino_file = dados_dir / f"{base_name}.xlsm"
         
         # Copia o modelo para o destino
         try:
@@ -637,9 +777,21 @@ class PDFToExcelUpdater:
         pdf_path = self.find_pdf_file(pdf_filename)
         logger.info(f"PDF encontrado: {Path(pdf_path).name}")
         
-        # Copia modelo e cria arquivo de destino
-        excel_path = self.copy_modelo_to_dados(pdf_path)
-        logger.info(f"Modelo copiado para: DADOS/{Path(excel_path).name}")
+        # NOVO: Tenta extrair nome da pessoa do PDF
+        person_name = self.extract_person_name_from_pdf(pdf_path)
+        
+        if person_name:
+            logger.info(f"Nome detectado: {person_name}")
+            # Copia modelo e cria arquivo com nome da pessoa
+            excel_path = self.copy_modelo_to_dados(pdf_path, person_name)
+            arquivo_final = f"DADOS/{self.normalize_filename(person_name)}.xlsm"
+        else:
+            logger.info("Nome não detectado - usando nome do PDF")
+            # Copia modelo com nome baseado no PDF (comportamento anterior)
+            excel_path = self.copy_modelo_to_dados(pdf_path)
+            arquivo_final = f"DADOS/{Path(pdf_path).stem}.xlsm"
+        
+        logger.info(f"Arquivo criado: {arquivo_final}")
         
         # Extrai dados do PDF
         pages_text = self.extract_text_from_pdf(pdf_path)
@@ -699,11 +851,11 @@ class PDFToExcelUpdater:
             if pages_sem_periodo and pages_sem_data:
                 logger.warning("Possíveis causas: formato de data não reconhecido ou códigos não encontrados")
         
-        return extracted_data, excel_path
+        return extracted_data, excel_path, person_name
 
 def main():
     """Função principal da aplicação"""
-    parser = argparse.ArgumentParser(description='PDF para Excel Updater v3.0 - Diretório de Trabalho')
+    parser = argparse.ArgumentParser(description='PDF para Excel Updater v3.2 - Detecção de Nome + Diretório de Trabalho')
     parser.add_argument('pdf_filename', nargs='?', help='Nome do arquivo PDF (opcional - abrirá diálogo se não fornecido)')
     parser.add_argument('-s', '--sheet', help='Nome da planilha específica (padrão: "LEVANTAMENTO DADOS")')
     parser.add_argument('-v', '--verbose', action='store_true', help='Modo verboso')
@@ -738,13 +890,20 @@ def main():
         
         print(f"Processando: {pdf_filename}")
         
-        extracted_data, excel_path = updater.process_pdf(pdf_filename)
+        extracted_data, excel_path, person_name = updater.process_pdf(pdf_filename)
         
         # Resumo final
         if extracted_data:
             total_extracted = len(extracted_data)
             print(f"OK: Concluído: {total_extracted} períodos processados")
-            excel_name = Path(excel_path).name
+            
+            if person_name:
+                excel_name = f"{updater.normalize_filename(person_name)}.xlsm"
+                print(f"Nome detectado: {person_name}")
+            else:
+                excel_name = Path(excel_path).name
+                print("Nome não detectado - usando nome do PDF")
+                
             print(f"Arquivo criado: DADOS/{excel_name}")
         else:
             print("ERRO: Nenhum dado foi extraído do PDF!")

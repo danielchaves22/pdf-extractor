@@ -1,18 +1,18 @@
-# 🔧 PDF para Excel Updater
+# 🔧 PDF para Excel Updater v3.1
 
-Aplicação Python para extrair dados de PDFs de folha de pagamento e preencher **diretamente** em planilhas Excel existentes (.xlsx/.xlsm), preservando formatação, fórmulas e macros VBA.
+Aplicação Python para extrair dados de PDFs de folha de pagamento e preencher planilhas Excel usando **diretório de trabalho configurado**, preservando formatação, fórmulas e macros VBA.
 
 ## ✨ Funcionalidades Principais
 
-- ✅ **Preenche Excel existente** - não cria arquivo novo
-- ✅ **Preserva macros VBA** (.xlsm) e formatação
-- ✅ **Ignora campos fantasma** do PDF automaticamente
-- ✅ **Detecta arquivo Excel** com mesmo nome do PDF
-- ✅ **Mapeia datas** automaticamente (formato texto ou datetime)
+- ✅ **Diretório de trabalho** configurado via .env (MODELO_DIR)
+- ✅ **Interface gráfica** para seleção de PDF (opcional)
+- ✅ **Preserva macros VBA** (.xlsm) e formatação completa
+- ✅ **Copia modelo automaticamente** para pasta DADOS/
+- ✅ **Filtro inteligente** por "Tipo da folha: FOLHA NORMAL"
 - ✅ **Processamento offline** (sem internet)
-- ✅ **Filtro inteligente** (ignora 13º salário, férias)
+- ✅ **Execução de qualquer local** (não precisa estar na pasta do PDF)
 
-## 📊 Mapeamento de Dados (v2.1)
+## 📊 Mapeamento de Dados Completo
 
 | PDF Código | Descrição | Excel Coluna | Fonte | Regras Especiais |
 |------------|-----------|--------------|-------|------------------|
@@ -43,213 +43,240 @@ python --version
 
 # 2. Instale dependências
 pip install -r requirements.txt
-
-# 3. Teste a instalação
-python test_instalacao.py
 ```
 
 ### Pré-requisitos
 - **Python 3.7+** 
 - **pip** (incluído no Python)
 
+## ⚙️ Configuração Obrigatória (.env)
+
+Crie arquivo `.env` na pasta do script:
+
+```bash
+# Diretório de trabalho (obrigatório)
+MODELO_DIR=C:/trabalho/folhas_pagamento
+```
+
+### Estrutura do Diretório de Trabalho:
+```
+C:/trabalho/folhas_pagamento/     ← MODELO_DIR
+├── MODELO.xlsm                   ← Planilha modelo (obrigatório)
+├── relatorio.pdf                 ← PDF a processar
+└── DADOS/                        ← Criado automaticamente
+    └── relatorio.xlsm            ← Resultado processado
+```
+
 ## 💻 Como Usar
 
-### 📁 Estrutura de Arquivos
-```
-pasta_projeto/
-├── relatorio.pdf          # Seu PDF
-├── relatorio.xlsm          # Excel com MESMO NOME
-└── pdf_to_excel_updater.py # Aplicação
-```
-
-### 🎯 Uso Básico
+### 🎯 Uso com Interface Gráfica (Recomendado)
 ```bash
-# Comando mais simples (usa "LEVANTAMENTO DADOS" automaticamente)
-python pdf_to_excel_updater.py EdsonGoulartLeonardo2.pdf
+# Abre seletor de arquivo no diretório de trabalho
+python pdf_to_excel_updater.py
+```
 
-# ⚠️ IMPORTANTE: Se "LEVANTAMENTO DADOS" não existir, especifique outra:
-python pdf_to_excel_updater.py arquivo.pdf -s "Nome_Da_Planilha_Correta"
+### 🎯 Uso por Linha de Comando
+```bash
+# Processa arquivo específico
+python pdf_to_excel_updater.py "relatorio.pdf"
 
-# Modo verboso (mostra detalhes de debug)
-python pdf_to_excel_updater.py arquivo.pdf -v
+# Com planilha específica
+python pdf_to_excel_updater.py "relatorio.pdf" -s "DADOS"
 
-# Especifica Excel manualmente
-python pdf_to_excel_updater.py arquivo.pdf -e planilha.xlsm
+# Modo verboso (diagnóstico)
+python pdf_to_excel_updater.py "relatorio.pdf" -v
 ```
 
 ### 📋 Exemplo Real
 ```bash
-# Seus arquivos:
-# - EdsonGoulartLeonardo2.pdf
-# - EdsonGoulartLeonardo2.xlsm (com aba "LEVANTAMENTO DADOS")
+# 1. Configure .env
+MODELO_DIR=C:/trabalho/folhas
 
-python pdf_to_excel_updater.py EdsonGoulartLeonardo2.pdf
+# 2. Estrutura no diretório:
+# C:/trabalho/folhas/
+# ├── MODELO.xlsm
+# └── EdsonGoulart-Jan2025.pdf
 
-# Output esperado:
-# 🔄 Processando: EdsonGoulartLeonardo2.pdf
-# ✅ Concluído: 54 períodos processados  
-# 📁 Arquivo: EdsonGoulartLeonardo2.xlsm (macros preservados)
+# 3. Execute (interface gráfica)
+python pdf_to_excel_updater.py
+
+# 4. Resultado automático:
+# C:/trabalho/folhas/DADOS/EdsonGoulart-Jan2025.xlsm
 ```
 
-## 📈 Resultado Esperado (v2.1)
+## 📈 Resultado Esperado
 
 ### ✅ Sucesso Total:
 ```
-🔄 Processando: EdsonGoulartLeonardo2.pdf
-✅ Concluído: 54 períodos processados
-📁 Arquivo: EdsonGoulartLeonardo2.xlsm (macros preservados)
+Processando: EdsonGoulart-Jan2025.pdf
+[OK] Processamento concluído: 54 períodos atualizados
+OK: Concluído: 54 períodos processados
+Arquivo criado: DADOS/EdsonGoulart-Jan2025.xlsm
 ```
 
 ### ⚠️ Sucesso Parcial:
 ```
-🔄 Processando: EdsonGoulartLeonardo2.pdf  
-✅ Processamento concluído: 45/54 períodos atualizados
-❌ Falhas em 9 períodos:
+Processando: relatorio.pdf
+[AVISO] Processamento concluído: 45/54 períodos atualizados
+[ERRO] Falhas em 9 períodos:
    out/12 (linha não encontrada)
    nov/14 (células já preenchidas)
    dez/15 (linha não encontrada)
-   ...
-📁 Arquivo: EdsonGoulartLeonardo2.xlsm (macros preservados)
+OK: Concluído: 45 períodos processados
+Arquivo criado: DADOS/relatorio.xlsm
 ```
 
-### ❌ Erro Crítico:
+### ❌ Erro de Configuração:
 ```
-🔄 Processando: arquivo.pdf
-❌ Erro: Planilha 'LEVANTAMENTO DADOS' não encontrada. Use -s para especificar outra planilha.
+ERRO: Arquivo .env não encontrado. Configure MODELO_DIR no arquivo .env
 ```
 
 ## 🔧 Funcionalidades Avançadas
 
-### 📊 Suporte a Múltiplos Formatos
-- **.xlsm** - Excel com macros (preserva VBA)
-- **.xlsx** - Excel padrão
-- **.xls** - Excel legado
+### 📊 Filtro Inteligente de Folhas
+- ✅ **Procura especificamente** por "Tipo da folha: FOLHA NORMAL"
+- ✅ **Ignora automaticamente** 13º salário, férias, rescisão
+- ✅ **Fallback inteligente** para PDFs sem linha "Tipo da folha"
 
-### 🎯 Detecção Inteligente de Planilhas
-1. Procura por nome: "LEVANTAMENTO DADOS"
-2. Procura por palavra-chave: "LEVANTAMENTO" ou "DADOS"
-3. Usa segunda aba como fallback
-4. Permite especificação manual com `-s`
+### 🎯 Detecção de Planilha
+1. **Padrão**: "LEVANTAMENTO DADOS" (obrigatório se não especificado)
+2. **Manual**: Use `-s "Nome_Da_Planilha"`
 
-### 📅 Mapeamento de Datas Flexível
+### 📅 Mapeamento de Períodos Flexível
 - **Texto**: `nov/12`, `dez/12`, `jan/13`
 - **DateTime**: `2012-11-10 00:00:00`
-- **Serial Date**: Números do Excel (41224, 41254, etc.)
+- **Serial Date**: Números do Excel
 
 ## 🐛 Solução de Problemas
 
-### Erro: "Períodos não encontrados"
+### Erro: "Arquivo .env não encontrado"
 ```bash
-# Diagnostique a planilha
-python diagnose_excel.py arquivo.xlsm
-
-# Especifique a planilha correta
-python pdf_to_excel_updater.py arquivo.pdf -s "Nome_Aba_Correta"
+# Crie arquivo .env
+echo "MODELO_DIR=C:/trabalho/folhas" > .env
 ```
 
-### Erro: "ModuleNotFoundError"
+### Erro: "MODELO.xlsm não encontrado"
 ```bash
-# Reinstale dependências
-pip install --upgrade -r requirements.txt
-
-# Ou instale individualmente
-pip install pandas openpyxl pdfplumber
+# Coloque MODELO.xlsm no diretório de trabalho
+# Verifique se o caminho em MODELO_DIR está correto
 ```
 
-### Erro: "Excel não encontrado"
-- ✅ Verifique se PDF e Excel têm **mesmo nome**
-- ✅ Confirme extensão: `.xlsm`, `.xlsx` ou `.xls`
-- ✅ Use `-e` para especificar caminho manualmente
+### Erro: "Arquivo PDF não encontrado"
+```bash
+# Use aspas para nomes com espaços
+python pdf_to_excel_updater.py "Relatório Janeiro 2025.pdf"
+```
 
-### Dados não são extraídos
-- ✅ Use `-v` para modo verboso
-- ✅ Verifique se PDF contém os códigos corretos
-- ✅ Confirme que não é folha de férias/13º salário
+### Nenhum dado extraído
+```bash
+# Use modo verboso para diagnóstico
+python pdf_to_excel_updater.py arquivo.pdf -v
+```
 
 ## 📁 Arquivos do Projeto
 
 ```
-pdf-extractor/
-├── pdf_to_excel_updater.py  # ← Aplicação principal
-├── requirements.txt         # ← Dependências
-├── setup.bat               # ← Instalação automática (Windows)
-├── test_instalacao.py      # ← Teste de instalação
-├── README.md               # ← Esta documentação
-└── diagnose_excel.py       # ← Ferramenta de diagnóstico
+pdf-updater/
+├── pdf_to_excel_updater.py     # ← Aplicação principal v3.1
+├── requirements.txt            # ← Dependências
+├── setup.bat                   # ← Instalação automática
+├── .env                        # ← Configuração (MODELO_DIR)
+└── README.md                   # ← Esta documentação
 ```
 
-## 🔒 Segurança e Preservação
+## 🔒 Preservação e Segurança
 
 ### ✅ O que é Preservado
-- **Macros VBA** (.xlsm)
-- **Fórmulas existentes**
-- **Formatação** (cores, bordas, fontes)
-- **Estrutura** da planilha
-- **Dados existentes** (não sobrescreve)
+- **Macros VBA** (.xlsm) - Preservação completa
+- **Fórmulas existentes** - Mantidas intactas
+- **Formatação** - Cores, bordas, fontes preservadas
+- **Estrutura** - Layout da planilha mantido
+- **Modelo original** - Nunca é alterado
 
 ### ✅ O que é Preenchido
 - **Apenas** colunas B, X, Y, AA, AC
-- **Apenas** se célula estiver vazia
-- **Apenas** dados extraídos do PDF
+- **Apenas** células vazias (não sobrescreve)
+- **Apenas** dados extraídos com sucesso do PDF
 
-## 📞 Suporte
+## 🎯 Casos de Uso
 
-### Comandos de Diagnóstico
+### **Uso Corporativo:**
 ```bash
-# Testa instalação
-python test_instalacao.py
+# .env corporativo
+MODELO_DIR=//servidor/rh/processamento_folhas
 
-# Analisa estrutura do Excel
-python diagnose_excel.py arquivo.xlsm
+# Uso por qualquer usuário na rede
+python pdf_to_excel_updater.py
+```
 
-# Testa com modo verboso
+### **Uso Individual:**
+```bash
+# .env local
+MODELO_DIR=D:/meus_documentos/folhas
+
+# Processamento local
+python pdf_to_excel_updater.py "folha_janeiro.pdf"
+```
+
+## 📞 Comandos de Diagnóstico
+
+### Teste de Configuração:
+```bash
+# Verifica se .env está correto
+python -c "from dotenv import load_dotenv; import os; load_dotenv(); print('MODELO_DIR:', os.getenv('MODELO_DIR'))"
+```
+
+### Modo Verbose:
+```bash
+# Diagnóstico completo
 python pdf_to_excel_updater.py arquivo.pdf -v
 ```
 
-### Logs Importantes
-- `✓ Código encontrado:` - PDF sendo processado corretamente
-- `Período X/Y encontrado na linha Z` - Mapeamento funcionando
-- `Atualizado B5: None → 1234.56` - Dados sendo inseridos
-- `Excel .xlsm atualizado com N alterações` - Sucesso
+### Ajuda:
+```bash
+# Menu de ajuda
+python pdf_to_excel_updater.py --help
+```
 
-## 📝 Versões
+## 📝 Changelog
 
-### v2.1 (Atual) - Conformidade Total com Regras de Negócio
-- ✅ **Código 02007501** adicionado (DIFER.PROV. HORAS EXTRAS 75%)
-- ✅ **Fallback inteligente** para PRODUÇÃO (índice → valor)
-- ✅ **Formato de horas** automático (`06:34` → `06,34`)
-- ✅ **Planilha padrão obrigatória** ("LEVANTAMENTO DADOS")
-- ✅ **Output simplificado** (resumo conciso, erros detalhados)
-- ✅ **Preservação total** de macros VBA e formatação
+### v3.1 (Atual) - Interface Gráfica + Diretório de Trabalho
+- ✅ **Interface gráfica** para seleção de PDF
+- ✅ **Diretório de trabalho** obrigatório via .env
+- ✅ **Execução de qualquer local**
+- ✅ **Organização padronizada** (DADOS/)
+- ✅ **Modo único** simplificado (sempre usa modelo)
 
-### v2.0 (Anterior)
-- ✅ Preenche Excel existente (.xlsm/.xlsx)
-- ✅ Preserva macros VBA completamente
-- ✅ Mapeamento de datas automático
-- ✅ Detecção inteligente de planilhas
-- ✅ Compatibilidade com Windows
+### v3.0 - Diretório de Trabalho
+- ✅ **Sistema de diretório de trabalho**
+- ✅ **Configuração obrigatória** via .env
+- ✅ **Modo único** (removidos modos alternativos)
 
-### v1.0 (Legado)
-- ✅ Gerava novo Excel/CSV
-- ❌ Não preservava formatação
+### v2.x - Funcionalidades Completas
+- ✅ **Todos os códigos** implementados (incluindo 02007501)
+- ✅ **Fallback inteligente** para PRODUÇÃO
+- ✅ **Formato de horas** automático
+- ✅ **Filtro aprimorado** de folhas
 
 ---
 
-## 🎯 Exemplo Completo
+## 🎯 Exemplo Completo de Uso
 
 ```bash
-# 1. Prepare os arquivos
-EdsonGoulartLeonardo2.pdf       # ← Seu PDF
-EdsonGoulartLeonardo2.xlsm      # ← Excel existente
+# 1. Configuração inicial
+echo "MODELO_DIR=C:/trabalho/folhas" > .env
 
-# 2. Execute
-python pdf_to_excel_updater.py EdsonGoulartLeonardo2.pdf -s "LEVANTAMENTO DADOS" -v
+# 2. Estrutura necessária:
+# C:/trabalho/folhas/
+# ├── MODELO.xlsm              ← Seu template
+# └── funcionario-jan2025.pdf  ← PDF a processar
 
-# 3. Resultado
-# ✓ 54 períodos processados
-# ✓ Colunas B, X, Y, AA, AC preenchidas
-# ✓ Macros VBA preservados
-# ✓ Formatação mantida
+# 3. Execução (escolha uma):
+python pdf_to_excel_updater.py                           # Interface gráfica
+python pdf_to_excel_updater.py "funcionario-jan2025.pdf" # Linha de comando
+
+# 4. Resultado:
+# C:/trabalho/folhas/DADOS/funcionario-jan2025.xlsm ✓ Criado e preenchido
 ```
 
-**💡 Dica:** Sempre mantenha backup do Excel original antes de processar!
+**💡 Dica:** A aplicação funciona como ferramenta corporativa - configure uma vez e use em qualquer projeto!

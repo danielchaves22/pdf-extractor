@@ -4,12 +4,13 @@
 PDF para Excel Updater - Processamento com Diretório de Trabalho
 ================================================================
 
-Versão 3.0 - Modo único com diretório de trabalho configurado via .env
+Versão 3.1 - Seleção gráfica de arquivo + Diretório de trabalho
 
 Funcionalidades:
 - Diretório de trabalho obrigatório configurado via MODELO_DIR no .env
 - Busca PDF e MODELO.xlsm no diretório de trabalho
 - Cria pasta DADOS no diretório de trabalho
+- Interface gráfica para seleção de PDF (opcional)
 - Pode ser executado de qualquer local desde que .env esteja configurado
 
 Estrutura esperada no diretório de trabalho:
@@ -20,6 +21,10 @@ Estrutura esperada no diretório de trabalho:
 
 Configuração .env:
 MODELO_DIR=C:\\caminho\\para\\diretorio\\de\\trabalho
+
+Uso:
+python pdf_to_excel_updater.py                    # Abre seletor de arquivo
+python pdf_to_excel_updater.py arquivo.pdf        # Processa arquivo específico
 
 Autor: Sistema de Extração Automatizada
 Data: 2025
@@ -37,6 +42,8 @@ from openpyxl import load_workbook
 import os
 import shutil
 from dotenv import load_dotenv
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -100,6 +107,55 @@ class PDFToExcelUpdater:
             raise ValueError(f"Diretório de trabalho não encontrado: {self.trabalho_dir}")
         
         logger.debug(f"Diretório de trabalho configurado: {self.trabalho_dir}")
+
+    def select_pdf_file(self) -> Optional[str]:
+        """Abre diálogo para seleção de arquivo PDF no diretório de trabalho"""
+        try:
+            # Carrega configuração primeiro
+            self.load_env_config()
+            
+            # Cria janela invisível
+            root = tk.Tk()
+            root.withdraw()  # Esconde a janela principal
+            root.attributes('-topmost', True)  # Mantém diálogo na frente
+            
+            # Configura diálogo para abrir no diretório de trabalho
+            trabalho_dir_path = Path(self.trabalho_dir)
+            
+            # Procura arquivos PDF no diretório de trabalho
+            pdf_files = list(trabalho_dir_path.glob("*.pdf"))
+            
+            if not pdf_files:
+                messagebox.showwarning(
+                    "Nenhum PDF encontrado", 
+                    f"Nenhum arquivo PDF encontrado no diretório de trabalho:\n{self.trabalho_dir}"
+                )
+                root.destroy()
+                return None
+            
+            # Abre diálogo de seleção
+            selected_file = filedialog.askopenfilename(
+                title="Selecione o arquivo PDF para processar",
+                initialdir=str(trabalho_dir_path),
+                filetypes=[
+                    ("Arquivos PDF", "*.pdf"),
+                    ("Todos os arquivos", "*.*")
+                ]
+            )
+            
+            root.destroy()
+            
+            if selected_file:
+                # Retorna apenas o nome do arquivo (sem caminho)
+                return Path(selected_file).name
+            else:
+                return None
+                
+        except Exception as e:
+            if 'root' in locals():
+                root.destroy()
+            logger.error(f"Erro ao abrir diálogo de seleção: {e}")
+            return None
 
     def find_pdf_file(self, pdf_filename: str) -> str:
         """Procura arquivo PDF no diretório de trabalho"""
@@ -648,7 +704,7 @@ class PDFToExcelUpdater:
 def main():
     """Função principal da aplicação"""
     parser = argparse.ArgumentParser(description='PDF para Excel Updater v3.0 - Diretório de Trabalho')
-    parser.add_argument('pdf_filename', help='Nome do arquivo PDF (será buscado no diretório de trabalho)')
+    parser.add_argument('pdf_filename', nargs='?', help='Nome do arquivo PDF (opcional - abrirá diálogo se não fornecido)')
     parser.add_argument('-s', '--sheet', help='Nome da planilha específica (padrão: "LEVANTAMENTO DADOS")')
     parser.add_argument('-v', '--verbose', action='store_true', help='Modo verboso')
     
@@ -661,16 +717,28 @@ def main():
         logging.getLogger().setLevel(logging.INFO)
     
     try:
-        # Cria updater e processa
+        # Cria updater
         updater = PDFToExcelUpdater()
         
         # Se especificou planilha, usa diretamente
         if args.sheet:
             updater.preferred_sheet = args.sheet
         
-        print(f"Processando: {args.pdf_filename}")
+        # Determina qual PDF processar
+        pdf_filename = args.pdf_filename
         
-        extracted_data, excel_path = updater.process_pdf(args.pdf_filename)
+        if not pdf_filename:
+            # Se não foi fornecido PDF, abre diálogo de seleção
+            print("Abrindo seletor de arquivo...")
+            pdf_filename = updater.select_pdf_file()
+            
+            if not pdf_filename:
+                print("CANCELADO: Nenhum arquivo selecionado")
+                return 0
+        
+        print(f"Processando: {pdf_filename}")
+        
+        extracted_data, excel_path = updater.process_pdf(pdf_filename)
         
         # Resumo final
         if extracted_data:

@@ -4,21 +4,22 @@
 PDF para Excel Updater - Processamento com Diretório de Trabalho
 ================================================================
 
-Versão 3.2 - Detecção de Nome da Pessoa + Seleção gráfica de arquivo
+Versão 3.2 - Detecção de Nome + FOLHA NORMAL + 13 SALÁRIO
 
 Funcionalidades:
 - Diretório de trabalho obrigatório configurado via MODELO_DIR no .env
 - Busca PDF e MODELO.xlsm no diretório de trabalho
 - Cria pasta DADOS no diretório de trabalho
 - Interface gráfica para seleção de PDF (opcional)
-- NOVO: Detecta nome da pessoa no PDF e usa para nomear arquivo final
+- Detecta nome da pessoa no PDF e usa para nomear arquivo final
+- Processa FOLHA NORMAL (linhas 1-65) e 13 SALARIO (linhas 67+)
 - Pode ser executado de qualquer local desde que .env esteja configurado
 
 Estrutura esperada no diretório de trabalho:
 ├── MODELO.xlsm          # Planilha modelo (obrigatório)
 ├── arquivo.pdf          # PDF a processar
 └── DADOS/               # Pasta criada automaticamente
-    └── ELIAS_DE_ALMEIDA_MEIRA_FILHO.xlsm  # Resultado com nome da pessoa
+    └── NOME DA PESSOA.xlsm     # Resultado com nome da pessoa
 
 Configuração .env:
 MODELO_DIR=C:\\caminho\\para\\diretorio\\de\\trabalho
@@ -58,15 +59,19 @@ class PDFToExcelUpdater:
         
         # Regras de mapeamento para colunas específicas do Excel
         self.mapping_rules = {
-            # Obter da coluna ÍNDICE (com fallback especial para PRODUÇÃO)
-            '01003601': {'code': 'PREMIO PROD. MENSAL', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True},
-            '01007301': {'code': 'HORAS EXT.100%-180', 'excel_column': 'Y', 'source': 'indice'},
-            '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AC', 'source': 'indice'},
-            '01003501': {'code': 'HORAS EXT.75%-180', 'excel_column': 'AA', 'source': 'indice'},
-            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AA', 'source': 'indice'},
+            # FOLHA NORMAL - Obter da coluna ÍNDICE (com fallback especial para PRODUÇÃO)
+            '01003601': {'code': 'PREMIO PROD. MENSAL', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},
+            '01007301': {'code': 'HORAS EXT.100%-180', 'excel_column': 'Y', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AC', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '01003501': {'code': 'HORAS EXT.75%-180', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
             
-            # Obter da coluna VALOR
-            '09090301': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor'}
+            # FOLHA NORMAL - Obter da coluna VALOR
+            '09090301_NORMAL': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor', 'folha_type': 'FOLHA NORMAL', 'original_code': '09090301'},
+            
+            # 13 SALARIO - Obter da coluna VALOR
+            '09090301_13SAL': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor', 'folha_type': '13 SALARIO', 'original_code': '09090301'},
+            '09090101_13SAL': {'code': 'REMUNERACAO BRUTA', 'excel_column': 'B', 'source': 'valor', 'folha_type': '13 SALARIO', 'original_code': '09090101', 'is_fallback': True}
         }
         
         # Planilha preferida (pode ser especificada externamente)
@@ -480,57 +485,91 @@ class PDFToExcelUpdater:
         else:
             return None, None
 
-    def extract_data_from_page(self, text: str) -> Dict[str, any]:
+    def extract_data_from_page(self, text: str, folha_type: str) -> Dict[str, any]:
         """Extrai dados específicos de uma página usando as regras de mapeamento"""
         data = {}
         codes_found = []
         
+        # Filtra regras pelo tipo de folha
+        relevant_rules = {k: v for k, v in self.mapping_rules.items() if v.get('folha_type') == folha_type}
+        
+        logger.debug(f"Processando página como: {folha_type}")
+        logger.debug(f"Regras aplicáveis: {list(relevant_rules.keys())}")
+        
         # Processa linha por linha
         lines = text.split('\n')
+        
+        # Para 13 SALARIO, precisamos tratar fallback especial entre 09090301 e 09090101
+        found_09090301 = None
+        found_09090101 = None
         
         for line in lines:
             line = line.strip()
             if not line:
                 continue
             
-            # Verifica se a linha contém algum dos códigos procurados
-            found_code = None
-            for code in self.mapping_rules.keys():
-                if code in line:
-                    found_code = code
-                    break
+            # Verifica códigos específicos do tipo de folha
+            for rule_key, rule in relevant_rules.items():
+                original_code = rule.get('original_code', rule_key)
+                
+                if original_code in line:
+                    codes_found.append(original_code)
+                    
+                    # Extrai os dois últimos números da linha
+                    indice, valor = self.extract_last_two_numbers(line)
+                    
+                    logger.debug(f"Processando {original_code} ({folha_type}): índice={indice}, valor={valor}")
+                    
+                    # Para 13 SALARIO, armazena os valores encontrados para fallback
+                    if folha_type == '13 SALARIO':
+                        if original_code == '09090301':
+                            found_09090301 = valor
+                        elif original_code == '09090101':
+                            found_09090101 = valor
+                    
+                    # Lógica de mapeamento normal para outros códigos
+                    if folha_type == 'FOLHA NORMAL' or (folha_type == '13 SALARIO' and original_code not in ['09090301', '09090101']):
+                        value_to_use = None
+                        source_used = None
+                        
+                        if rule['source'] == 'indice':
+                            if indice is not None and indice != 0:
+                                value_to_use = indice
+                                source_used = 'índice'
+                            elif rule.get('fallback_to_valor', False) and valor is not None:
+                                # Fallback para PRODUÇÃO (01003601)
+                                value_to_use = valor
+                                source_used = 'valor (fallback)'
+                                logger.debug(f"[FALLBACK] {original_code}: Usando fallback valor pois indice vazio")
+                        elif rule['source'] == 'valor' and valor is not None:
+                            value_to_use = valor
+                            source_used = 'valor'
+                        
+                        if value_to_use is not None:
+                            data[rule['excel_column']] = value_to_use
+                            logger.debug(f"[OK] {original_code}: Coluna {rule['excel_column']} = {value_to_use} ({source_used})")
+                        else:
+                            logger.debug(f"[AVISO] {original_code}: Valor não pôde ser extraído")
+        
+        # Para 13 SALARIO, aplica lógica de fallback entre 09090301 e 09090101
+        if folha_type == '13 SALARIO':
+            value_to_use = None
+            source_used = None
             
-            if found_code:
-                codes_found.append(found_code)
-                
-                # Extrai os dois últimos números da linha
-                indice, valor = self.extract_last_two_numbers(line)
-                
-                rule = self.mapping_rules[found_code]
-                logger.debug(f"Processando {found_code}: índice={indice}, valor={valor}")
-                
-                # Lógica de mapeamento com fallback
-                value_to_use = None
-                source_used = None
-                
-                if rule['source'] == 'indice':
-                    if indice is not None and indice != 0:
-                        value_to_use = indice
-                        source_used = 'índice'
-                    elif rule.get('fallback_to_valor', False) and valor is not None:
-                        # Fallback para PRODUÇÃO (01003601)
-                        value_to_use = valor
-                        source_used = 'valor (fallback)'
-                        logger.debug(f"[FALLBACK] {found_code}: Usando fallback valor pois indice vazio")
-                elif rule['source'] == 'valor' and valor is not None:
-                    value_to_use = valor
-                    source_used = 'valor'
-                
-                if value_to_use is not None:
-                    data[rule['excel_column']] = value_to_use
-                    logger.debug(f"[OK] {found_code}: Coluna {rule['excel_column']} = {value_to_use} ({source_used})")
-                else:
-                    logger.debug(f"[AVISO] {found_code}: Valor não pôde ser extraído")
+            if found_09090301 is not None and found_09090301 != 0:
+                value_to_use = found_09090301
+                source_used = '09090301 (prioridade)'
+            elif found_09090101 is not None and found_09090101 != 0:
+                value_to_use = found_09090101
+                source_used = '09090101 (fallback)'
+                logger.debug(f"[FALLBACK 13SAL] Usando 09090101 pois 09090301 não disponível")
+            
+            if value_to_use is not None:
+                data['B'] = value_to_use
+                logger.debug(f"[OK] 13 SALARIO: Coluna B = {value_to_use} ({source_used})")
+            else:
+                if found_09090301 is not None or found_09090101 is not None:
+                    logger.debug(f"[AVISO] 13 SALARIO: Códigos encontrados mas valores zerados (09090301={found_09090301}, 09090101={found_09090101})")
         
         if codes_found:
             logger.debug(f"Códigos encontrados na página: {codes_found}")
@@ -543,12 +582,15 @@ class PDFToExcelUpdater:
         
         return data
 
-    def filter_normal_pages(self, pages_text: List[str]) -> List[str]:
-        """Filtra apenas páginas de folha normal (exclui 13º salário e férias)"""
-        filtered_pages = []
+    def filter_and_categorize_pages(self, pages_text: List[str]) -> Dict[str, List[str]]:
+        """Filtra e categoriza páginas por tipo (FOLHA NORMAL e 13 SALARIO)"""
+        categorized_pages = {
+            'FOLHA NORMAL': [],
+            '13 SALARIO': []
+        }
         
         for i, text in enumerate(pages_text):
-            is_normal = True
+            page_type = None
             page_type_found = False
             
             # Primeiro, procura especificamente pela linha "Tipo da folha:"
@@ -563,13 +605,18 @@ class PDFToExcelUpdater:
                     
                     # Verifica se é folha normal
                     if re.search(r'FOLHA\s+NORMAL', line_clean, re.IGNORECASE):
-                        is_normal = True
+                        page_type = 'FOLHA NORMAL'
                         logger.debug(f"Página {i+1}: FOLHA NORMAL identificada")
                         break
-                    # Verifica se é tipo especial (13º, férias, etc.)
-                    elif re.search(r'13\s*[°º]?\s*SAL[AÁ]RIO|DECIMOT?ERCEIRO|F[ÉE]RIAS|ADIANTAMENTO|RESCIS[ÃA]O', line_clean, re.IGNORECASE):
-                        is_normal = False
-                        logger.debug(f"Página {i+1}: Tipo especial identificado: '{line_clean}'")
+                    # Verifica se é 13º salário (sem º)
+                    elif re.search(r'13\s*SAL[AÁ]RIO', line_clean, re.IGNORECASE):
+                        page_type = '13 SALARIO'
+                        logger.debug(f"Página {i+1}: 13 SALARIO identificada")
+                        break
+                    # Verifica se é outros tipos especiais (férias, rescisão, etc.) - IGNORAR
+                    elif re.search(r'F[ÉE]RIAS|ADIANTAMENTO|RESCIS[ÃA]O', line_clean, re.IGNORECASE):
+                        page_type = 'IGNORAR'
+                        logger.debug(f"Página {i+1}: Tipo especial ignorado: '{line_clean}'")
                         break
             
             # Se não encontrou linha "Tipo da folha:", usa filtro de fallback mais restritivo
@@ -579,41 +626,52 @@ class PDFToExcelUpdater:
                 # Procura por indicadores de folhas especiais no cabeçalho/início da página
                 header_text = '\n'.join(lines[:10])  # Apenas primeiras 10 linhas
                 
-                exclusion_patterns = [
-                    r'13\s*[°º]?\s*SAL[AÁ]RIO',
-                    r'DECIMOT?ERCEIRO',
-                    r'FOLHA\s*DE\s*F[ÉE]RIAS',
-                    r'ADIANTAMENTO\s*SALARIAL',
-                    r'RESCIS[ÃA]O'
-                ]
-                
-                for pattern in exclusion_patterns:
-                    if re.search(pattern, header_text, re.IGNORECASE):
-                        is_normal = False
-                        logger.debug(f"Página {i+1}: Tipo especial identificado no cabeçalho (fallback)")
-                        break
+                # Verifica 13º salário no cabeçalho
+                if re.search(r'13\s*SAL[AÁ]RIO', header_text, re.IGNORECASE):
+                    page_type = '13 SALARIO'
+                    logger.debug(f"Página {i+1}: 13 SALARIO identificado no cabeçalho (fallback)")
+                # Verifica outros tipos para ignorar
+                elif re.search(r'F[ÉE]RIAS|ADIANTAMENTO\s*SALARIAL|RESCIS[ÃA]O', header_text, re.IGNORECASE):
+                    page_type = 'IGNORAR'
+                    logger.debug(f"Página {i+1}: Tipo especial identificado no cabeçalho (fallback)")
+                else:
+                    # Se não detectou nada específico, assume folha normal
+                    page_type = 'FOLHA NORMAL'
+                    logger.debug(f"Página {i+1}: Assumindo FOLHA NORMAL (fallback)")
             
-            if is_normal:
-                filtered_pages.append(text)
-                logger.debug(f"Página {i+1}: Aceita como folha normal")
+            # Adiciona à categoria apropriada
+            if page_type and page_type != 'IGNORAR':
+                categorized_pages[page_type].append(text)
+                logger.debug(f"Página {i+1}: Aceita como {page_type}")
             else:
-                logger.debug(f"Página {i+1}: Rejeitada (não é folha normal)")
+                logger.debug(f"Página {i+1}: Rejeitada (ignorada)")
                 
-        logger.debug(f"Páginas filtradas: {len(filtered_pages)} de {len(pages_text)} (folhas normais)")
-        return filtered_pages
+        logger.debug(f"Páginas categorizadas: FOLHA NORMAL={len(categorized_pages['FOLHA NORMAL'])}, 13 SALARIO={len(categorized_pages['13 SALARIO'])}")
+        return categorized_pages
 
-    def find_row_for_period(self, worksheet, month: int, year: int) -> Optional[int]:
+    def find_row_for_period(self, worksheet, month: int, year: int, folha_type: str) -> Optional[int]:
         """Encontra a linha correspondente ao período (mês/ano) na planilha"""
         meses_nomes = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
                       'jul', 'ago', 'set', 'out', 'nov', 'dez']
         periodo_procurado = f"{meses_nomes[month]}/{str(year)[2:]}"
         
-        logger.debug(f"Procurando período: {periodo_procurado} (mês {month}, ano {year})")
+        # Define faixa de linhas baseada no tipo de folha
+        if folha_type == 'FOLHA NORMAL':
+            start_row = 1
+            end_row = 65  # Até linha 65 para folha normal
+        elif folha_type == '13 SALARIO':
+            start_row = 67  # A partir da linha 67 (66 é cabeçalho)
+            end_row = worksheet.max_row
+        else:
+            logger.error(f"Tipo de folha não reconhecido: {folha_type}")
+            return None
+        
+        logger.debug(f"Procurando período: {periodo_procurado} (mês {month}, ano {year}) - {folha_type} (linhas {start_row}-{end_row})")
         
         found_values = []  # Para debug
         
-        # Procura na coluna A (PERÍODO)
-        for row_num in range(1, worksheet.max_row + 1):
+        # Procura na coluna A (PERÍODO) na faixa específica
+        for row_num in range(start_row, min(end_row + 1, worksheet.max_row + 1)):
             cell_value = worksheet[f'A{row_num}'].value
             
             if cell_value is None:
@@ -628,13 +686,13 @@ class PDFToExcelUpdater:
                 cell_str = cell_value.strip()
                 
                 if cell_str == periodo_procurado:
-                    logger.debug(f"[OK] Período {periodo_procurado} encontrado na linha {row_num} (formato texto)")
+                    logger.debug(f"[OK] Período {periodo_procurado} encontrado na linha {row_num} (formato texto) - {folha_type}")
                     return row_num
             
             # Se for data/datetime, compara mês e ano
             elif isinstance(cell_value, datetime):
                 if cell_value.month == month and cell_value.year == year:
-                    logger.debug(f"[OK] Período {periodo_procurado} encontrado na linha {row_num} (formato data: {cell_value})")
+                    logger.debug(f"[OK] Período {periodo_procurado} encontrado na linha {row_num} (formato data: {cell_value}) - {folha_type}")
                     return row_num
             
             # Se for number (serial date do Excel), tenta converter
@@ -649,7 +707,7 @@ class PDFToExcelUpdater:
                         excel_date = datetime(1899, 12, 31) + timedelta(days=cell_value)
                     
                     if excel_date.month == month and excel_date.year == year:
-                        logger.debug(f"[OK] Período {periodo_procurado} encontrado na linha {row_num} (serial: {cell_value} -> {excel_date})")
+                        logger.debug(f"[OK] Período {periodo_procurado} encontrado na linha {row_num} (serial: {cell_value} -> {excel_date}) - {folha_type}")
                         return row_num
                         
                 except Exception as e:
@@ -657,13 +715,13 @@ class PDFToExcelUpdater:
                     continue
         
         # Log de debug quando não encontrar
-        logger.warning(f"[ERRO] Período {periodo_procurado} não encontrado na planilha")
+        logger.warning(f"[ERRO] Período {periodo_procurado} não encontrado na planilha - {folha_type} (linhas {start_row}-{end_row})")
         if found_values:
             logger.debug(f"Valores encontrados na coluna A: {', '.join(found_values[:5])}")
             if len(found_values) > 5:
                 logger.debug(f"... e mais {len(found_values) - 5} valores")
         else:
-            logger.debug("Coluna A vazia ou sem dados válidos")
+            logger.debug(f"Coluna A vazia ou sem dados válidos na faixa {start_row}-{end_row}")
         
         return None
 
@@ -700,53 +758,60 @@ class PDFToExcelUpdater:
             failed_periods = []
             successful_periods = []
             
-            # Para cada período com dados extraídos
-            for (month, year), data in extracted_data.items():
-                meses = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
-                        'jul', 'ago', 'set', 'out', 'nov', 'dez']
-                periodo = f"{meses[month]}/{str(year)[2:]}"
-                
-                # Encontra a linha correspondente ao período
-                row_num = self.find_row_for_period(worksheet, month, year)
-                
-                if row_num:
-                    # Atualiza cada coluna com dados
-                    period_updates = 0
-                    cells_already_filled = []
-                    cells_updated = []
+            # Separar dados por tipo de folha
+            for folha_type in ['FOLHA NORMAL', '13 SALARIO']:
+                if folha_type not in extracted_data:
+                    continue
                     
-                    for column, value in data.items():
-                        cell_address = f"{column}{row_num}"
-                        old_value = worksheet[cell_address].value
+                logger.debug(f"\n--- Processando {folha_type} ---")
+                
+                # Para cada período com dados extraídos deste tipo
+                for (month, year), data in extracted_data[folha_type].items():
+                    meses = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+                            'jul', 'ago', 'set', 'out', 'nov', 'dez']
+                    periodo = f"{meses[month]}/{str(year)[2:]}"
+                    
+                    # Encontra a linha correspondente ao período na faixa correta
+                    row_num = self.find_row_for_period(worksheet, month, year, folha_type)
+                    
+                    if row_num:
+                        # Atualiza cada coluna com dados
+                        period_updates = 0
+                        cells_already_filled = []
+                        cells_updated = []
                         
-                        # Só atualiza se a célula estiver vazia ou diferente
-                        if old_value is None or old_value == '' or old_value == 0:
-                            worksheet[cell_address] = value
-                            cells_updated.append(f"{cell_address}:{value}")
-                            logger.debug(f"Atualizado {cell_address}: {old_value} -> {value}")
-                            updates_count += 1
-                            period_updates += 1
+                        for column, value in data.items():
+                            cell_address = f"{column}{row_num}"
+                            old_value = worksheet[cell_address].value
+                            
+                            # Só atualiza se a célula estiver vazia ou diferente
+                            if old_value is None or old_value == '' or old_value == 0:
+                                worksheet[cell_address] = value
+                                cells_updated.append(f"{cell_address}:{value}")
+                                logger.debug(f"Atualizado {cell_address}: {old_value} -> {value} ({folha_type})")
+                                updates_count += 1
+                                period_updates += 1
+                            else:
+                                cells_already_filled.append(f"{cell_address}:{old_value}")
+                                logger.debug(f"Celula {cell_address} ja preenchida: {old_value} ({folha_type})")
+                        
+                        if period_updates > 0:
+                            successful_periods.append(f"{periodo} ({folha_type})")
+                            logger.debug(f"[OK] {periodo} ({folha_type}): {period_updates} células atualizadas")
                         else:
-                            cells_already_filled.append(f"{cell_address}:{old_value}")
-                            logger.debug(f"Celula {cell_address} ja preenchida: {old_value}")
-                    
-                    if period_updates > 0:
-                        successful_periods.append(periodo)
-                        logger.debug(f"[OK] {periodo}: {period_updates} células atualizadas")
+                            # Período encontrado mas nenhuma célula foi atualizada
+                            failed_periods.append(f"{periodo} ({folha_type}) - células já preenchidas")
+                            logger.debug(f"[AVISO] {periodo} ({folha_type}): todas as células já estavam preenchidas")
                     else:
-                        # Período encontrado mas nenhuma célula foi atualizada
-                        failed_periods.append(f"{periodo} (células já preenchidas)")
-                        logger.debug(f"[AVISO] {periodo}: todas as células já estavam preenchidas")
-                else:
-                    # Período não encontrado na planilha
-                    failed_periods.append(f"{periodo} (linha não encontrada)")
-                    logger.debug(f"[ERRO] {periodo}: linha não encontrada na planilha")
+                        # Período não encontrado na planilha
+                        failed_periods.append(f"{periodo} ({folha_type}) - linha não encontrada")
+                        logger.debug(f"[ERRO] {periodo} ({folha_type}): linha não encontrada na planilha")
             
             # Salva as alterações preservando formato original
             workbook.save(excel_path)
             
             # Log resumido
-            total_periods = len(extracted_data)
+            total_periods = sum(len(periods) for periods in extracted_data.values())
             success_periods = len(successful_periods)
             
             if success_periods == total_periods:
@@ -796,67 +861,80 @@ class PDFToExcelUpdater:
         
         # Extrai dados do PDF
         pages_text = self.extract_text_from_pdf(pdf_path)
-        normal_pages = self.filter_normal_pages(pages_text)
+        categorized_pages = self.filter_and_categorize_pages(pages_text)
         
-        logger.debug(f"PDF processado: {len(pages_text)} páginas totais, {len(normal_pages)} páginas válidas (folha normal)")
+        total_pages = len(pages_text)
+        folha_normal_count = len(categorized_pages['FOLHA NORMAL'])
+        salario_13_count = len(categorized_pages['13 SALARIO'])
         
-        # Extrai dados de cada página
-        extracted_data = {}
-        pages_sem_data = []
-        pages_sem_periodo = []
+        logger.debug(f"PDF processado: {total_pages} páginas totais")
+        logger.debug(f"  - FOLHA NORMAL: {folha_normal_count} páginas")
+        logger.debug(f"  - 13 SALARIO: {salario_13_count} páginas")
         
-        for i, page_text in enumerate(normal_pages):
-            logger.debug(f"\n--- Processando página {i+1} ---")
-            
-            # Extrai data de referência
-            date_ref = self.extract_reference_date(page_text)
-            if not date_ref:
-                pages_sem_periodo.append(i+1)
-                logger.debug(f"[AVISO] Página {i+1}: Data de referência não encontrada")
+        # Extrai dados de cada tipo de página
+        extracted_data = {
+            'FOLHA NORMAL': {},
+            '13 SALARIO': {}
+        }
+        
+        for folha_type, pages in categorized_pages.items():
+            if not pages:
                 continue
+                
+            logger.debug(f"\n--- Processando páginas de {folha_type} ---")
             
-            mes, ano = date_ref
-            meses_nomes = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
-                          'jul', 'ago', 'set', 'out', 'nov', 'dez']
-            periodo_str = f"{meses_nomes[mes]}/{str(ano)[2:]}"
-            logger.debug(f"Data: Página {i+1}: Período identificado como {periodo_str}")
+            pages_sem_data = []
+            pages_sem_periodo = []
             
-            # Extrai dados da página
-            page_data = self.extract_data_from_page(page_text)
+            for i, page_text in enumerate(pages):
+                logger.debug(f"\n--- Processando página {i+1} de {folha_type} ---")
+                
+                # Extrai data de referência
+                date_ref = self.extract_reference_date(page_text)
+                if not date_ref:
+                    pages_sem_periodo.append(i+1)
+                    logger.debug(f"[AVISO] Página {i+1} ({folha_type}): Data de referência não encontrada")
+                    continue
+                
+                mes, ano = date_ref
+                meses_nomes = ['', 'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+                              'jul', 'ago', 'set', 'out', 'nov', 'dez']
+                periodo_str = f"{meses_nomes[mes]}/{str(ano)[2:]}"
+                logger.debug(f"Data: Página {i+1} ({folha_type}): Período identificado como {periodo_str}")
+                
+                # Extrai dados da página
+                page_data = self.extract_data_from_page(page_text, folha_type)
+                
+                if page_data:
+                    extracted_data[folha_type][date_ref] = page_data
+                    logger.debug(f"[OK] Página {i+1} ({folha_type}): {len(page_data)} campos extraídos {list(page_data.keys())}")
+                else:
+                    pages_sem_data.append((i+1, periodo_str))
+                    logger.debug(f"[AVISO] Página {i+1} ({folha_type}): Período {periodo_str} identificado, mas nenhum código mapeado encontrado")
             
-            if page_data:
-                extracted_data[date_ref] = page_data
-                codes_found = [code for code in self.mapping_rules.keys() 
-                              if any(self.mapping_rules[code]['excel_column'] == col for col in page_data.keys())]
-                logger.debug(f"[OK] Página {i+1}: {len(page_data)} campos extraídos {list(page_data.keys())}")
-                logger.debug(f"  Códigos encontrados: {codes_found}")
-            else:
-                pages_sem_data.append((i+1, periodo_str))
-                logger.debug(f"[AVISO] Página {i+1}: Período {periodo_str} identificado, mas nenhum código mapeado encontrado")
-        
-        # Resumo do processamento das páginas
-        if pages_sem_periodo:
-            logger.info(f"[AVISO] {len(pages_sem_periodo)} páginas sem período identificado: {pages_sem_periodo}")
-        
-        if pages_sem_data:
-            periodos_sem_data = [periodo for _, periodo in pages_sem_data]
-            logger.info(f"[AVISO] {len(pages_sem_data)} páginas com período mas sem dados: {periodos_sem_data}")
+            # Resumo do processamento das páginas por tipo
+            if pages_sem_periodo:
+                logger.info(f"[AVISO] {folha_type}: {len(pages_sem_periodo)} páginas sem período identificado: {pages_sem_periodo}")
+            
+            if pages_sem_data:
+                periodos_sem_data = [periodo for _, periodo in pages_sem_data]
+                logger.info(f"[AVISO] {folha_type}: {len(pages_sem_data)} páginas com período mas sem dados: {periodos_sem_data}")
         
         # Atualiza Excel
-        if extracted_data:
+        total_extracted = sum(len(periods) for periods in extracted_data.values())
+        if total_extracted > 0:
             logger.debug(f"\n--- Atualizando Excel ---")
-            logger.debug(f"Períodos a processar: {len(extracted_data)}")
+            logger.debug(f"Períodos a processar: FOLHA NORMAL={len(extracted_data['FOLHA NORMAL'])}, 13 SALARIO={len(extracted_data['13 SALARIO'])}")
             self.update_excel_file(excel_path, extracted_data)
         else:
             logger.warning("ERRO: Nenhum dado foi extraído do PDF!")
-            if pages_sem_periodo and pages_sem_data:
-                logger.warning("Possíveis causas: formato de data não reconhecido ou códigos não encontrados")
+            logger.warning("Possíveis causas: formato de data não reconhecido ou códigos não encontrados")
         
         return extracted_data, excel_path, person_name
 
 def main():
     """Função principal da aplicação"""
-    parser = argparse.ArgumentParser(description='PDF para Excel Updater v3.2 - Detecção de Nome + Diretório de Trabalho')
+    parser = argparse.ArgumentParser(description='PDF para Excel Updater v3.2 - Detecção de Nome + FOLHA NORMAL + 13 SALARIO')
     parser.add_argument('pdf_filename', nargs='?', help='Nome do arquivo PDF (opcional - abrirá diálogo se não fornecido)')
     parser.add_argument('-s', '--sheet', help='Nome da planilha específica (padrão: "LEVANTAMENTO DADOS")')
     parser.add_argument('-v', '--verbose', action='store_true', help='Modo verboso')
@@ -894,12 +972,19 @@ def main():
         extracted_data, excel_path, person_name = updater.process_pdf(pdf_filename)
         
         # Resumo final
-        if extracted_data:
-            total_extracted = len(extracted_data)
+        total_extracted = sum(len(periods) for periods in extracted_data.values())
+        if total_extracted > 0:
+            folha_normal_periods = len(extracted_data.get('FOLHA NORMAL', {}))
+            salario_13_periods = len(extracted_data.get('13 SALARIO', {}))
+            
             print(f"OK: Concluído: {total_extracted} períodos processados")
+            if folha_normal_periods > 0:
+                print(f"  - FOLHA NORMAL: {folha_normal_periods} períodos")
+            if salario_13_periods > 0:
+                print(f"  - 13 SALARIO: {salario_13_periods} períodos")
             
             if person_name:
-                excel_name = f"{updater.normalize_filename(person_name)}.xlsm"
+                excel_name = f"{self.normalize_filename(person_name)}.xlsm"
                 print(f"Nome detectado: {person_name}")
             else:
                 excel_name = Path(excel_path).name

@@ -267,25 +267,26 @@ class PDFToExcelUpdater:
         return nome_final
 
     def normalize_filename(self, nome: str) -> str:
-        """Converte nome da pessoa para formato de arquivo válido"""
-        # Substitui espaços por underscore
-        filename = nome.replace(' ', '_')
+        """Converte nome da pessoa para formato de arquivo válido mantendo espaços"""
+        # Mantém espaços como estão no PDF original
+        filename = nome
         
-        # Remove/substitui caracteres inválidos para nome de arquivo
+        # Remove apenas caracteres que são realmente inválidos para nomes de arquivo
+        # Windows: < > : " / \ | ? *
         filename = re.sub(r'[<>:"/\\|?*]', '', filename)
         
-        # Remove caracteres especiais extras
-        filename = re.sub(r'[^\w_]', '', filename)
+        # Remove apenas caracteres de controle perigosos, mas mantém letras, números e espaços
+        filename = re.sub(r'[\x00-\x1f\x7f]', '', filename)
         
-        # Remove underscores múltiplos
-        filename = re.sub(r'_+', '_', filename)
+        # Remove espaços múltiplos consecutivos
+        filename = re.sub(r'\s+', ' ', filename)
         
-        # Remove underscores no início e fim
-        filename = filename.strip('_')
+        # Remove espaços no início e fim
+        filename = filename.strip()
         
         # Limita tamanho (nomes de arquivo muito longos podem dar problema)
         if len(filename) > 100:
-            filename = filename[:100].rstrip('_')
+            filename = filename[:100].rstrip()
         
         return filename
 

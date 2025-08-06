@@ -14,16 +14,18 @@ Data: 2025
 """
 
 import re
-import pandas as pd
-import pdfplumber
 from datetime import datetime
 from pathlib import Path
 import logging
 from typing import Dict, List, Optional, Tuple, Callable
-from openpyxl import load_workbook
 import os
 import shutil
-from dotenv import load_dotenv
+
+# Importações pesadas são carregadas sob demanda
+_pd = None
+_pdfplumber = None
+_load_workbook = None
+_load_dotenv = None
 
 class PDFProcessorCore:
     """Classe central para processamento de PDFs - sem interface gráfica"""
@@ -96,8 +98,13 @@ class PDFProcessorCore:
 
     def load_env_config(self):
         """Carrega configurações do arquivo .env"""
+        global _load_dotenv
+        if _load_dotenv is None:
+            from dotenv import load_dotenv as _ld
+            _load_dotenv = _ld
+
         if Path('.env').exists():
-            load_dotenv()
+            _load_dotenv()
             self._log("Arquivo .env carregado", "DEBUG")
         else:
             raise ValueError("Arquivo .env não encontrado. Configure MODELO_DIR no arquivo .env")
@@ -151,7 +158,12 @@ class PDFProcessorCore:
     def extract_person_name_from_pdf(self, pdf_path: str) -> Optional[str]:
         """Extrai o nome da pessoa da primeira página do PDF"""
         try:
-            with pdfplumber.open(pdf_path) as pdf:
+            global _pdfplumber
+            if _pdfplumber is None:
+                import pdfplumber as _pp
+                _pdfplumber = _pp
+
+            with _pdfplumber.open(pdf_path) as pdf:
                 if not pdf.pages:
                     return None
                 
@@ -290,9 +302,14 @@ class PDFProcessorCore:
     def extract_text_from_pdf(self, pdf_path: str) -> List[str]:
         """Extrai texto de todas as páginas do PDF"""
         pages_text = []
-        
+
         try:
-            with pdfplumber.open(pdf_path) as pdf:
+            global _pdfplumber
+            if _pdfplumber is None:
+                import pdfplumber as _pp
+                _pdfplumber = _pp
+
+            with _pdfplumber.open(pdf_path) as pdf:
                 total_pages = len(pdf.pages)
                 self._log(f"Processando PDF: {total_pages} páginas")
                 
@@ -550,12 +567,17 @@ class PDFProcessorCore:
     def update_excel_file(self, excel_path: str, extracted_data: Dict):
         """Atualiza o arquivo Excel existente com os dados extraídos"""
         try:
+            global _load_workbook
+            if _load_workbook is None:
+                from openpyxl import load_workbook as _lw
+                _load_workbook = _lw
+
             is_macro_enabled = excel_path.lower().endswith('.xlsm')
-            
+
             if is_macro_enabled:
-                workbook = load_workbook(excel_path, keep_vba=True)
+                workbook = _load_workbook(excel_path, keep_vba=True)
             else:
-                workbook = load_workbook(excel_path)
+                workbook = _load_workbook(excel_path)
             
             worksheet = None
             
@@ -644,6 +666,11 @@ class PDFProcessorCore:
             Dict com resultados do processamento
         """
         try:
+            global _pd
+            if _pd is None:
+                import pandas as pd
+                _pd = pd
+
             self._update_progress(0, "Iniciando processamento...")
             
             # Carrega configuração se não foi definida manualmente

@@ -144,10 +144,29 @@ class ProcessingPopup:
             self.parent.popup_progress_label = None
             self.parent.popup_log_textbox = None
 
+class SplashScreen:
+    """Janela de carregamento exibida durante a inicialização"""
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.overrideredirect(True)
+        width, height = 300, 150
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = int((screen_width / 2) - (width / 2))
+        y = int((screen_height / 2) - (height / 2))
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        label = tk.Label(self.root, text="Carregando...", font=("Arial", 14))
+        label.pack(expand=True, fill="both")
+        self.root.update()
+
+    def close(self):
+        self.root.destroy()
+
 class PDFExcelDesktopApp:
     def __init__(self):
         # Configuração da janela principal
         self.root = TkinterDnD.Tk()  # Usa TkinterDnD para drag & drop
+        self.root.withdraw()
         self.root.title("Processamento de Folha de Pagamento v3.2")
         self.root.geometry("950x600")
         self.root.resizable(False, False)  # Janela com tamanho fixo
@@ -189,9 +208,10 @@ class PDFExcelDesktopApp:
         
         # Configura drag and drop
         self.setup_drag_drop()
-        
+
         # Carrega configurações
         self.load_initial_config()
+        self.root.deiconify()
 
     def setup_styles(self):
         """Define cores e estilos customizados"""
@@ -1150,22 +1170,25 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
 
 def main():
     """Função principal"""
+    splash = SplashScreen()
     try:
         # Verifica dependências
         import customtkinter
-        
+
         # Tenta importar TkinterDnD (opcional)
         try:
             import tkinterdnd2
         except ImportError:
             print("AVISO: tkinterdnd2 não instalado. Drag & drop desabilitado.")
             print("Para habilitar: pip install tkinterdnd2")
-        
+
         # Cria e executa aplicação
         app = PDFExcelDesktopApp()
+        splash.close()
         app.run()
-        
+
     except ImportError as e:
+        splash.close()
         error_msg = """
 ERRO: Dependências não instaladas!
 
@@ -1178,28 +1201,29 @@ pip install tkinterdnd2
 
 Dependências faltando: {}
         """.format(str(e))
-        
+
         print(error_msg)
-        
+
         # Tenta mostrar em messagebox se tkinter básico funcionar
         try:
             import tkinter.messagebox as mb
             mb.showerror("Dependências não instaladas", error_msg)
         except:
             pass
-        
+
         sys.exit(1)
-    
+
     except Exception as e:
+        splash.close()
         error_msg = f"Erro ao iniciar aplicação: {e}"
         print(error_msg)
-        
+
         try:
             import tkinter.messagebox as mb
             mb.showerror("Erro", error_msg)
         except:
             pass
-        
+
         sys.exit(1)
 
 

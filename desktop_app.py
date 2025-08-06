@@ -186,12 +186,12 @@ class PDFExcelDesktopApp:
         
         # Cria a interface
         self.create_interface()
-        
+
         # Configura drag and drop
         self.setup_drag_drop()
-        
-        # Carrega configurações
-        self.load_initial_config()
+
+        # Carrega configurações em thread separada
+        threading.Thread(target=self.load_initial_config, daemon=True).start()
 
     def setup_styles(self):
         """Define cores e estilos customizados"""
@@ -853,17 +853,35 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                 messagebox.showerror("Erro", "Por favor, selecione apenas arquivos PDF.")
 
     def load_initial_config(self):
-        """Carrega configuração inicial"""
+        """Carrega configuração inicial em thread separada"""
+
+        def atualizar_status(texto, cor=None):
+            def _inner():
+                kwargs = {"text": texto}
+                if cor:
+                    kwargs["text_color"] = cor
+                self.config_status.configure(**kwargs)
+
+            self.root.after(0, _inner)
+
+        atualizar_status("🔄 Carregando configuração inicial...")
+
         try:
             # Tenta carregar do .env
             self.processor.load_env_config()
+
             if self.processor.trabalho_dir:
-                self.dir_entry.delete(0, 'end')
-                self.dir_entry.insert(0, self.processor.trabalho_dir)
-                self.validate_config()
-        except:
-            # Se não conseguir carregar, apenas ignora
-            pass
+                def atualizar_diretorio():
+                    self.dir_entry.delete(0, "end")
+                    self.dir_entry.insert(0, self.processor.trabalho_dir)
+
+                self.root.after(0, atualizar_diretorio)
+                self.root.after(0, self.validate_config)
+                atualizar_status("✅ Configuração carregada", self.colors["success"])
+            else:
+                atualizar_status("⚠️ Nenhuma configuração encontrada", self.colors["warning"])
+        except Exception as e:
+            atualizar_status(f"❌ Erro ao carregar: {e}", self.colors["error"])
 
     def select_directory(self):
         """Abre diálogo para seleção de diretório"""

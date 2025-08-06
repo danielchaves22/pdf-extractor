@@ -1,0 +1,23 @@
+# Dependências para o PDF para Excel Desktop App v3.2
+# ====================================================
+
+# Core dependencies (obrigatórias)
+pandas>=1.5.0
+openpyxl>=3.0.0
+pdfplumber>=0.7.0
+python-dotenv>=1.0.0
+
+# GUI dependencies (obrigatórias para interface)
+customtkinter>=5.0.0
+pillow>=9.0.0
+
+# Optional dependencies (melhoram a experiência)
+tkinterdnd2>=0.3.0        # Para drag & drop de arquivos
+
+# Para geração de executável (opcional)
+pyinstaller>=5.0.0
+
+# Dependências do sistema que podem ser necessárias:
+# Windows: Nenhuma adicional
+# macOS: Nenhuma adicional
+# Linux: python3-tk (via apt/yum/pacman)

@@ -82,6 +82,13 @@ if %errorlevel% neq 0 (
     goto :error
 )
 
+echo   - Instalando PyInstaller...
+pip install pyinstaller>=5.0.0 --quiet
+if %errorlevel% neq 0 (
+    echo ERRO: Falha ao instalar PyInstaller
+    goto :error
+)
+
 echo OK: Todas as dependencias instaladas com sucesso
 
 :: Cria arquivo .env exemplo se nao existir

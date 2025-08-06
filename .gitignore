@@ -2,3 +2,6 @@
 *.xlsm
 .env
 __pycache__
+/build
+/dist
+*.spec

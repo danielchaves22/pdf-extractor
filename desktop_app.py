@@ -174,13 +174,10 @@ class PDFExcelDesktopApp:
         self.popup_progress_bar = None
         self.popup_progress_label = None
         self.popup_log_textbox = None
-        
-        # Inicializa o processador core
-        self.processor = PDFProcessorCore(
-            progress_callback=self.update_progress,
-            log_callback=self.add_log_message
-        )
-        
+
+        # Processador será inicializado sob demanda
+        self.processor = None
+
         # Configuração de estilo
         self.setup_styles()
         
@@ -193,11 +190,20 @@ class PDFExcelDesktopApp:
         # Carrega configurações
         self.load_initial_config()
 
+    def _get_processor(self):
+        """Inicializa o processador core quando necessário"""
+        if self.processor is None:
+            self.processor = PDFProcessorCore(
+                progress_callback=self.update_progress,
+                log_callback=self.add_log_message
+            )
+        return self.processor
+
     def setup_styles(self):
         """Define cores e estilos customizados"""
         self.colors = {
             'primary': "#1f538d",
-            'secondary': "#14375e", 
+            'secondary': "#14375e",
             'success': "#2cc985",
             'warning': "#ffa726",
             'error': "#f44336",
@@ -856,10 +862,11 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         """Carrega configuração inicial"""
         try:
             # Tenta carregar do .env
-            self.processor.load_env_config()
-            if self.processor.trabalho_dir:
+            processor = self._get_processor()
+            processor.load_env_config()
+            if processor.trabalho_dir:
                 self.dir_entry.delete(0, 'end')
-                self.dir_entry.insert(0, self.processor.trabalho_dir)
+                self.dir_entry.insert(0, processor.trabalho_dir)
                 self.validate_config()
         except:
             # Se não conseguir carregar, apenas ignora
@@ -888,8 +895,9 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
             return
         
         try:
-            self.processor.set_trabalho_dir(directory)
-            valid, message = self.processor.validate_trabalho_dir()
+            processor = self._get_processor()
+            processor.set_trabalho_dir(directory)
+            valid, message = processor.validate_trabalho_dir()
             
             if valid:
                 self.config_status.configure(
@@ -913,9 +921,9 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         """Atualiza lista de PDFs disponíveis no diretório"""
         if not self.trabalho_dir:
             return
-        
+
         try:
-            pdf_files = self.processor.get_pdf_files_in_trabalho_dir()
+            pdf_files = self._get_processor().get_pdf_files_in_trabalho_dir()
             if pdf_files:
                 self.add_log_message(f"PDFs encontrados: {', '.join(pdf_files)}")
             else:
@@ -1014,8 +1022,9 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         
         # Configura processador
         sheet_name = self.sheet_entry.get().strip()
+        processor = self._get_processor()
         if sheet_name:
-            self.processor.preferred_sheet = sheet_name
+            processor.preferred_sheet = sheet_name
         
         # Mostra popup de processamento
         self.processing_popup.show()
@@ -1038,7 +1047,7 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                 pdf_filename = self.selected_file
             
             # Processa PDF
-            results = self.processor.process_pdf(pdf_filename)
+            results = self._get_processor().process_pdf(pdf_filename)
             
             # Atualiza interface no thread principal
             self.root.after(0, self._process_complete, results)

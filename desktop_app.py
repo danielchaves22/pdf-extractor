@@ -859,18 +859,49 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                 messagebox.showerror("Erro", "Por favor, selecione apenas arquivos PDF.")
 
     def load_initial_config(self):
-        """Carrega configuração inicial"""
-        try:
-            # Tenta carregar do .env
-            processor = self._get_processor()
-            processor.load_env_config()
-            if processor.trabalho_dir:
-                self.dir_entry.delete(0, 'end')
-                self.dir_entry.insert(0, processor.trabalho_dir)
-                self.validate_config()
-        except:
-            # Se não conseguir carregar, apenas ignora
-            pass
+        """Carrega configuração inicial em segundo plano"""
+
+        def task():
+            # Mensagem inicial na interface
+            self.root.after(
+                0,
+                lambda: self.config_status.configure(
+                    text="🔄 Carregando configurações...",
+                    text_color=self.colors['text_secondary'],
+                ),
+            )
+            self.root.after(
+                0,
+                lambda: self.add_log_message("Iniciando carregamento de configuração"),
+            )
+            try:
+                processor = self._get_processor()
+                processor.load_env_config()
+                if processor.trabalho_dir:
+                    def apply_dir():
+                        self.dir_entry.delete(0, 'end')
+                        self.dir_entry.insert(0, processor.trabalho_dir)
+                        self.validate_config()
+                        self.add_log_message("Configuração inicial carregada")
+
+                    self.root.after(0, apply_dir)
+            except Exception as e:
+                self.root.after(
+                    0,
+                    lambda: self.add_log_message(
+                        f"Erro ao carregar configuração: {e}"
+                    ),
+                )
+            finally:
+                self.root.after(
+                    0,
+                    lambda: self.config_status.configure(
+                        text="✅ Configuração pronta",
+                        text_color=self.colors['success'],
+                    ),
+                )
+
+        threading.Thread(target=task, daemon=True).start()
 
     def select_directory(self):
         """Abre diálogo para seleção de diretório"""

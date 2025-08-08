@@ -66,11 +66,30 @@ class ProcessingPopup:
         """Mostra o popup de processamento"""
         self.window = ctk.CTkToplevel(self.parent.root)
         self.window.title("Processando PDF...")
-        self.window.geometry("600x400")
+        
+        # Remove qualquer efeito de transparência ou grab
+        self.window.attributes('-alpha', 1.0)  # Força opacidade total
+        
+        # Configurações básicas primeiro
         self.window.transient(self.parent.root)
-        self.window.grab_set()
         self.window.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
         
+        # Cria interface primeiro
+        self._create_interface()
+        
+        # Posiciona DEPOIS de criar a interface, com delay para garantir renderização
+        self.window.after(50, lambda: self._position_relative_to_parent(600, 400))
+        
+        # Força foco sem grab
+        self.window.focus_force()
+        self.window.lift()
+        self.window.attributes('-topmost', True)
+        self.window.after(100, lambda: self.window.attributes('-topmost', False))
+
+    def _create_interface(self):
+        """Cria a interface do popup separadamente"""
+    def _create_interface(self):
+        """Cria a interface do popup separadamente"""
         # Header
         header_frame = ctk.CTkFrame(self.window)
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
@@ -123,6 +142,26 @@ class ProcessingPopup:
         self.parent.popup_progress_label = self.progress_label
         self.parent.popup_log_textbox = self.log_textbox
     
+    def _position_relative_to_parent(self, width, height):
+        """Posiciona o popup relativamente à janela principal de forma simples"""
+        try:
+            # Método simples usando apenas winfo_rootx/rooty
+            parent_x = self.parent.root.winfo_rootx()
+            parent_y = self.parent.root.winfo_rooty()
+            parent_width = self.parent.root.winfo_width()
+            parent_height = self.parent.root.winfo_height()
+            
+            # Calcula posição centralizada
+            x = parent_x + (parent_width - width) // 2
+            y = parent_y + (parent_height - height) // 2
+            
+            # Aplica posição diretamente
+            self.window.geometry(f"{width}x{height}+{x}+{y}")
+            
+        except Exception:
+            # Fallback simples: posição fixa
+            self.window.geometry(f"{width}x{height}+300+200")
+    
     def _on_close_attempt(self):
         """Impede fechamento durante processamento"""
         if self.parent.processing:
@@ -134,23 +173,32 @@ class ProcessingPopup:
             self.close()
     
     def close(self):
-        """Fecha o popup"""
+        """Fecha o popup sem efeitos de transparência"""
         if self.window:
-            self.window.grab_release()
-            self.window.destroy()
-            self.window = None
-            # Desconecta callbacks
+            # Desconecta callbacks primeiro
             self.parent.popup_progress_bar = None
             self.parent.popup_progress_label = None
             self.parent.popup_log_textbox = None
+            
+            # Destrói janela diretamente sem grab_release
+            self.window.destroy()
+            self.window = None
+            
+            # Força foco na janela principal sem grab/release
+            self.parent.root.focus_force()
+            self.parent.root.lift()
+            self.parent.root.attributes('-alpha', 1.0)  # Força opacidade total
 
 class PDFExcelDesktopApp:
     def __init__(self):
-        # Configuração da janela principal
-        self.root = TkinterDnD.Tk()  # Usa TkinterDnD para drag & drop
+        # Configuração da janela principal simples
+        self.root = TkinterDnD.Tk()
         self.root.title("Processamento de Folha de Pagamento v3.2")
         self.root.geometry("950x600")
-        self.root.resizable(False, False)  # Janela com tamanho fixo
+        self.root.resizable(False, False)
+        
+        # Remove qualquer transparência da janela principal
+        self.root.attributes('-alpha', 1.0)
         
         # Configuração de ícone (opcional)
         try:
@@ -169,6 +217,10 @@ class PDFExcelDesktopApp:
         self.processing_history = []
         self.current_logs = []
         
+        # Variáveis da interface (inicializadas antes das abas)
+        self.verbose_var = ctk.BooleanVar()
+        self.sheet_entry = None  # Será criado na aba de configurações
+        
         # Popup de processamento
         self.processing_popup = ProcessingPopup(self)
         self.popup_progress_bar = None
@@ -177,6 +229,12 @@ class PDFExcelDesktopApp:
 
         # Processador será inicializado sob demanda
         self.processor = None
+        
+        # Debug para posicionamento de popups (pode ser ativado se necessário)
+        # self._debug_positioning = True  # Descomente para ativar logs de debug
+        
+        # Para ativar debug de posicionamento temporariamente, descomente:
+        # print("Para ativar debug de posicionamento, adicione: app._debug_positioning = True")
 
         # Configuração de estilo
         self.setup_styles()
@@ -226,15 +284,19 @@ class PDFExcelDesktopApp:
         self.tabview = ctk.CTkTabview(main_frame)
         self.tabview.pack(fill="both", expand=True, pady=(10, 0))
         
-        # Cria as abas
+        # Cria as abas na ordem correta: Processamento, Histórico, Configurações
         self.tab_processing = self.tabview.add("📄 Processamento")
         self.tab_history = self.tabview.add("📊 Histórico")
+        self.tab_settings = self.tabview.add("⚙️ Configurações Avançadas")
         
         # Configura aba de processamento
         self.create_processing_tab()
         
         # Configura aba de histórico
         self.create_history_tab()
+        
+        # Configura aba de configurações
+        self.create_settings_tab()
         
         # Define aba inicial
         self.tabview.set("📄 Processamento")
@@ -275,9 +337,6 @@ class PDFExcelDesktopApp:
         
         # Botão de ação principal (logo após seleção de arquivo)
         self.create_main_action_button()
-        
-        # Opções avançadas (expansível e colapsadas por padrão)
-        self.create_expandable_options_section()
 
     def create_history_tab(self):
         """Cria o conteúdo da aba de histórico"""
@@ -323,6 +382,126 @@ class PDFExcelDesktopApp:
         # Container da lista de histórico
         self.history_list_frame = ctk.CTkScrollableFrame(history_main, height=400)
         self.history_list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+
+    def create_settings_tab(self):
+        """Cria o conteúdo da aba de configurações"""
+        # Container principal das configurações
+        settings_main = ctk.CTkFrame(self.tab_settings)
+        settings_main.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Título da seção
+        settings_title = ctk.CTkLabel(
+            settings_main,
+            text="⚙️ Configurações Avançadas",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            anchor="w"
+        )
+        settings_title.pack(fill="x", padx=20, pady=(15, 20))
+        
+        # Seção de planilha personalizada
+        sheet_frame = ctk.CTkFrame(settings_main)
+        sheet_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        sheet_title = ctk.CTkLabel(
+            sheet_frame,
+            text="📊 Nome da Planilha",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            anchor="w"
+        )
+        sheet_title.pack(fill="x", padx=20, pady=(15, 8))
+        
+        sheet_desc = ctk.CTkLabel(
+            sheet_frame,
+            text="Especifique o nome da planilha a ser atualizada. Deixe vazio para usar 'LEVANTAMENTO DADOS' (padrão).",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors['text_secondary'],
+            anchor="w",
+            wraplength=800
+        )
+        sheet_desc.pack(fill="x", padx=20, pady=(0, 10))
+        
+        self.sheet_entry = ctk.CTkEntry(
+            sheet_frame,
+            placeholder_text="LEVANTAMENTO DADOS",
+            font=ctk.CTkFont(size=12),
+            height=35
+        )
+        self.sheet_entry.pack(fill="x", padx=20, pady=(0, 15))
+        
+        # Seção de modo verboso
+        verbose_frame = ctk.CTkFrame(settings_main)
+        verbose_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        verbose_title = ctk.CTkLabel(
+            verbose_frame,
+            text="🔍 Logs Detalhados",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            anchor="w"
+        )
+        verbose_title.pack(fill="x", padx=20, pady=(15, 8))
+        
+        verbose_desc = ctk.CTkLabel(
+            verbose_frame,
+            text="Ativa logs detalhados durante o processamento para diagnóstico e resolução de problemas.",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors['text_secondary'],
+            anchor="w",
+            wraplength=800
+        )
+        verbose_desc.pack(fill="x", padx=20, pady=(0, 10))
+        
+        self.verbose_checkbox = ctk.CTkCheckBox(
+            verbose_frame,
+            text="Habilitar modo verboso (logs detalhados)",
+            variable=self.verbose_var,
+            font=ctk.CTkFont(size=12)
+        )
+        self.verbose_checkbox.pack(padx=20, pady=(0, 15), anchor="w")
+        
+        # Seção de reset
+        reset_frame = ctk.CTkFrame(settings_main)
+        reset_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        reset_title = ctk.CTkLabel(
+            reset_frame,
+            text="🔄 Redefinir Configurações",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            anchor="w"
+        )
+        reset_title.pack(fill="x", padx=20, pady=(15, 8))
+        
+        reset_desc = ctk.CTkLabel(
+            reset_frame,
+            text="Restaura todas as configurações para os valores padrão.",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors['text_secondary'],
+            anchor="w"
+        )
+        reset_desc.pack(fill="x", padx=20, pady=(0, 10))
+        
+        reset_button = ctk.CTkButton(
+            reset_frame,
+            text="🔄 Redefinir Configurações",
+            command=self.reset_settings,
+            width=200,
+            height=35,
+            font=ctk.CTkFont(size=12),
+            fg_color=self.colors['secondary'],
+            hover_color="#0f2a3f"
+        )
+        reset_button.pack(padx=20, pady=(0, 15), anchor="w")
+
+    def reset_settings(self):
+        """Redefine todas as configurações para valores padrão"""
+        # Limpa campo de planilha (se existir)
+        if self.sheet_entry:
+            self.sheet_entry.delete(0, 'end')
+        
+        # Desabilita modo verboso
+        self.verbose_var.set(False)
+        
+        # Mensagem de confirmação
+        messagebox.showinfo("Configurações", "Configurações redefinidas para valores padrão.")
 
     def create_config_section(self):
         """Cria seção de configuração"""
@@ -459,106 +638,19 @@ class PDFExcelDesktopApp:
         )
         self.process_button.pack()
 
-    def create_expandable_options_section(self):
-        """Cria seção de opções avançadas expansível"""
-        # Container principal das opções
-        self.options_main_frame = ctk.CTkFrame(self.processing_container)
-        self.options_main_frame.pack(fill="x", pady=(0, 5))
+    def clear_history(self):
+        """Limpa o histórico de processamentos"""
+        if not self.processing_history:
+            return
         
-        # Header clicável para expandir/colapsar
-        self.options_header = ctk.CTkFrame(self.options_main_frame)
-        self.options_header.pack(fill="x", padx=5, pady=5)
-        
-        # Estado expandido/colapsado
-        self.options_expanded = False
-        
-        # Frame para título e seta
-        header_content = ctk.CTkFrame(self.options_header, fg_color="transparent")
-        header_content.pack(fill="x", padx=8, pady=6)
-        
-        # Seta de expansão
-        self.expand_arrow = ctk.CTkLabel(
-            header_content,
-            text="▶",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            width=15
-        )
-        self.expand_arrow.pack(side="left", padx=(0, 8))
-        
-        # Título da seção
-        options_title = ctk.CTkLabel(
-            header_content,
-            text="⚙️ Opções Avançadas",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            anchor="w"
-        )
-        options_title.pack(side="left", fill="x", expand=True)
-        
-        # Frame para conteúdo das opções (inicialmente oculto)
-        self.options_content_frame = ctk.CTkFrame(self.options_main_frame)
-        # Não faz pack() inicialmente - fica oculto
-        
-        # Conteúdo das opções
-        opts_frame = ctk.CTkFrame(self.options_content_frame)
-        opts_frame.pack(fill="x", padx=10, pady=(0, 8))
-        
-        # Opção de planilha personalizada
-        sheet_frame = ctk.CTkFrame(opts_frame, fg_color="transparent")
-        sheet_frame.pack(fill="x", padx=10, pady=10)
-        
-        sheet_label = ctk.CTkLabel(
-            sheet_frame,
-            text="Nome da planilha (deixe vazio para usar 'LEVANTAMENTO DADOS'):",
-            font=ctk.CTkFont(size=11),
-            anchor="w"
-        )
-        sheet_label.pack(fill="x", pady=(0, 5))
-        
-        self.sheet_entry = ctk.CTkEntry(
-            sheet_frame,
-            placeholder_text="LEVANTAMENTO DADOS",
-            font=ctk.CTkFont(size=11)
-        )
-        self.sheet_entry.pack(fill="x", pady=(0, 8))
-        
-        # Checkbox para modo verboso
-        self.verbose_var = ctk.BooleanVar()
-        self.verbose_checkbox = ctk.CTkCheckBox(
-            opts_frame,
-            text="Modo verboso (logs detalhados)",
-            variable=self.verbose_var,
-            font=ctk.CTkFont(size=11)
-        )
-        self.verbose_checkbox.pack(padx=10, pady=(0, 10), anchor="w")
-        
-        # Bind para clique no header
-        self.options_header.bind("<Button-1>", self.toggle_options)
-        header_content.bind("<Button-1>", self.toggle_options)
-        self.expand_arrow.bind("<Button-1>", self.toggle_options)
-        options_title.bind("<Button-1>", self.toggle_options)
-        
-        # Hover effect
-        def on_enter(event):
-            self.options_header.configure(fg_color=self.colors['bg_light'])
-        
-        def on_leave(event):
-            self.options_header.configure(fg_color=["gray92", "gray14"])
-        
-        self.options_header.bind("<Enter>", on_enter)
-        self.options_header.bind("<Leave>", on_leave)
-
-    def toggle_options(self, event=None):
-        """Alterna entre expandir/colapsar opções avançadas"""
-        if self.options_expanded:
-            # Colapsar
-            self.options_content_frame.pack_forget()
-            self.expand_arrow.configure(text="▶")
-            self.options_expanded = False
-        else:
-            # Expandir (permite scroll quando expandido)
-            self.options_content_frame.pack(fill="x", padx=5, pady=(0, 5))
-            self.expand_arrow.configure(text="▼")
-            self.options_expanded = True
+        # Confirmação
+        from tkinter import messagebox
+        if messagebox.askyesno("Confirmar", "Deseja limpar todo o histórico da sessão?"):
+            self.processing_history.clear()
+            self.update_history_display()
+            self.history_status_label.configure(
+                text="Nenhum processamento realizado nesta sessão"
+            )
 
     def add_to_history(self, pdf_file, success, result_data):
         """Adiciona processamento ao histórico"""
@@ -732,10 +824,29 @@ class PDFExcelDesktopApp:
         # Cria janela de detalhes
         details_window = ctk.CTkToplevel(self.root)
         details_window.title(f"Detalhes - {entry.pdf_file}")
-        details_window.geometry("700x600")
-        details_window.transient(self.root)
-        details_window.grab_set()
         
+        # Remove efeitos de transparência
+        details_window.attributes('-alpha', 1.0)
+        
+        # Configurações básicas primeiro
+        details_window.transient(self.root)
+        
+        # Cria interface primeiro
+        self._create_details_interface(details_window, entry)
+        
+        # Posiciona DEPOIS de criar a interface, com delay
+        details_window.after(50, lambda: self._position_window_relative_to_parent(details_window, 700, 600))
+        
+        # Força foco sem grab
+        details_window.focus_force()
+        details_window.lift()
+        details_window.attributes('-topmost', True)
+        details_window.after(100, lambda: details_window.attributes('-topmost', False))
+
+    def _create_details_interface(self, details_window, entry):
+        """Cria a interface da janela de detalhes separadamente"""
+    def _create_details_interface(self, details_window, entry):
+        """Cria a interface da janela de detalhes separadamente"""
         # Header
         header_frame = ctk.CTkFrame(details_window)
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
@@ -819,24 +930,60 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         close_button = ctk.CTkButton(
             details_window,
             text="Fechar",
-            command=details_window.destroy,
+            command=lambda: self._close_details_window(details_window),
             width=100
         )
         close_button.pack(pady=(0, 20))
 
-    def clear_history(self):
-        """Limpa o histórico de processamentos"""
-        if not self.processing_history:
-            return
+    def _position_window_relative_to_parent(self, window, width, height):
+        """Posiciona uma janela relativamente à janela principal usando coordenadas exatas"""
+        try:
+            # Força atualização da janela principal para obter coordenadas corretas
+            self.root.update_idletasks()
+            
+            # Obtém coordenadas absolutas da janela principal na tela
+            parent_x = self.root.winfo_rootx()
+            parent_y = self.root.winfo_rooty()
+            parent_width = self.root.winfo_width()
+            parent_height = self.root.winfo_height()
+            
+            # Calcula posição centralizada relativamente à janela principal
+            x = parent_x + (parent_width - width) // 2
+            y = parent_y + (parent_height - height) // 2
+            
+            # Garante que não fique fora da tela (mas prioriza estar no mesmo monitor)
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            
+            # Ajusta apenas se realmente sair da tela
+            if x + width > screen_width:
+                x = screen_width - width - 10
+            if x < 0:
+                x = 10
+            if y + height > screen_height:
+                y = screen_height - height - 10
+            if y < 0:
+                y = 10
+            
+            # Define geometria com coordenadas absolutas
+            window.geometry(f"{width}x{height}+{x}+{y}")
+            
+        except Exception as e:
+            # Fallback: centraliza na tela
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            x = (screen_width - width) // 2
+            y = (screen_height - height) // 2
+            window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _close_details_window(self, window):
+        """Fecha janela de detalhes sem efeitos de transparência"""
+        window.destroy()
         
-        # Confirmação
-        from tkinter import messagebox
-        if messagebox.askyesno("Confirmar", "Deseja limpar todo o histórico da sessão?"):
-            self.processing_history.clear()
-            self.update_history_display()
-            self.history_status_label.configure(
-                text="Nenhum processamento realizado nesta sessão"
-            )
+        # Força foco na janela principal sem grab/release
+        self.root.focus_force()
+        self.root.lift()
+        self.root.attributes('-alpha', 1.0)  # Força opacidade total
 
     def setup_drag_drop(self):
         """Configura drag and drop de arquivos"""
@@ -874,6 +1021,12 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                 0,
                 lambda: self.add_log_message("Iniciando carregamento de configuração"),
             )
+<<<<<<< Updated upstream
+=======
+            
+            error_message = None
+            
+>>>>>>> Stashed changes
             try:
                 processor = self._get_processor()
                 processor.load_env_config()
@@ -886,6 +1039,7 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
 
                     self.root.after(0, apply_dir)
             except Exception as e:
+<<<<<<< Updated upstream
                 self.root.after(
                     0,
                     lambda: self.add_log_message(
@@ -900,6 +1054,28 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                         text_color=self.colors['success'],
                     ),
                 )
+=======
+                # Captura a mensagem de erro antes de usar na lambda
+                error_message = str(e)
+            
+            # Processa erro se houver
+            if error_message:
+                self.root.after(
+                    0,
+                    lambda msg=error_message: self.add_log_message(
+                        f"Erro ao carregar configuração: {msg}"
+                    ),
+                )
+            
+            # Atualiza status final
+            self.root.after(
+                0,
+                lambda: self.config_status.configure(
+                    text="✅ Configuração pronta",
+                    text_color=self.colors['success'],
+                ),
+            )
+>>>>>>> Stashed changes
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1052,7 +1228,7 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
             return
         
         # Configura processador
-        sheet_name = self.sheet_entry.get().strip()
+        sheet_name = self.sheet_entry.get().strip() if self.sheet_entry else ""
         processor = self._get_processor()
         if sheet_name:
             processor.preferred_sheet = sheet_name
@@ -1126,8 +1302,17 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         # Limpa interface para novo processamento
         self.clear_processing_interface()
         
-        # Vai para aba de histórico
-        self.tabview.set("📊 Histórico")
+        # Vai para aba apropriada
+        if results['success']:
+            # Se sucesso, vai para histórico
+            self.tabview.set("📊 Histórico")
+        else:
+            # Se erro de configuração, vai para configurações
+            error_msg = results.get('error', '').lower()
+            if any(term in error_msg for term in ['planilha', 'sheet', 'levantamento dados']):
+                self.tabview.set("⚙️ Configurações Avançadas")
+            else:
+                self.tabview.set("📊 Histórico")
 
     def clear_processing_interface(self):
         """Limpa a interface de processamento para nova operação"""
@@ -1135,13 +1320,10 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         self.selected_file = None
         self.update_selected_file_display()
         
-        # Limpa opções avançadas
-        self.sheet_entry.delete(0, 'end')
+        # Limpa campos da aba de configurações (se existirem)
+        if self.sheet_entry:
+            self.sheet_entry.delete(0, 'end')
         self.verbose_var.set(False)
-        
-        # Colapsa opções avançadas
-        if self.options_expanded:
-            self.toggle_options()
         
         # Limpa logs da sessão atual para próximo processamento
         self.current_logs = []
@@ -1161,8 +1343,12 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
         
         messagebox.showerror("Erro", f"Erro no processamento:\n\n{error_message}")
         
-        # Vai para aba de histórico para mostrar o erro
-        self.tabview.set("📊 Histórico")
+        # Vai para aba apropriada baseada no tipo de erro
+        error_msg = error_message.lower()
+        if any(term in error_msg for term in ['planilha', 'sheet', 'levantamento dados']):
+            self.tabview.set("⚙️ Configurações Avançadas")
+        else:
+            self.tabview.set("📊 Histórico")
 
     def on_closing(self):
         """Manipula fechamento da aplicação"""

@@ -219,11 +219,14 @@ class ProcessingPopup:
 
 class PDFExcelDesktopApp:
     def __init__(self):
-        # Configuração da janela principal simples
+        # Configuração da janela principal usando CustomTkinter
         if HAS_DND:
-            self.root = TkinterDnD.Tk()
+            class CTkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
+                """Janela principal com suporte a Drag & Drop"""
+                pass
+            self.root = CTkDnD()
         else:
-            self.root = tk.Tk()
+            self.root = ctk.CTk()
         
         self.root.title("Processamento de Folha de Pagamento v3.2")
         self.root.geometry("950x600")

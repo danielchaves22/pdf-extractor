@@ -1,18 +1,18 @@
 @echo off
 :: ================================================================
-:: PDF para Excel Updater - Setup Automatizado v2.2
+:: PDF para Excel Updater - Setup Automatizado v3.2
 :: ================================================================
-:: Instala todas as dependencias necessarias para um novo ambiente
+:: Instala todas as dependências para interface gráfica e CLI
 :: ================================================================
 
 echo.
 echo ==========================================
-echo  PDF para Excel Updater - Setup v2.2
+echo  PDF para Excel Updater - Setup v3.2
 echo ==========================================
 echo.
 
 :: Verifica se Python esta instalado
-echo [1/6] Verificando instalacao do Python...
+echo [1/7] Verificando instalacao do Python...
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERRO: Python nao esta instalado ou nao esta no PATH
@@ -28,7 +28,7 @@ echo OK: Python %PYTHON_VERSION% encontrado
 
 :: Verifica se pip esta funcionando
 echo.
-echo [2/6] Verificando pip...
+echo [2/7] Verificando pip...
 pip --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo ERRO: pip nao esta disponivel
@@ -42,7 +42,7 @@ echo OK: pip %PIP_VERSION% funcionando
 
 :: Atualiza pip para versao mais recente
 echo.
-echo [3/6] Atualizando pip...
+echo [3/7] Atualizando pip...
 python -m pip install --upgrade pip --quiet
 if %errorlevel% neq 0 (
     echo AVISO: Nao foi possivel atualizar pip, continuando...
@@ -50,56 +50,92 @@ if %errorlevel% neq 0 (
     echo OK: pip atualizado
 )
 
-:: Instala dependencias principais
+:: Instala dependências CORE (obrigatórias)
 echo.
-echo [4/6] Instalando dependencias principais...
+echo [4/7] Instalando dependencias CORE...
 
 echo   - Instalando pandas...
-pip install pandas>=1.5.0 --quiet
+pip install "pandas>=1.5.0" --quiet
 if %errorlevel% neq 0 (
     echo ERRO: Falha ao instalar pandas
     goto :error
 )
 
 echo   - Instalando openpyxl...
-pip install openpyxl>=3.0.0 --quiet
+pip install "openpyxl>=3.0.0" --quiet
 if %errorlevel% neq 0 (
     echo ERRO: Falha ao instalar openpyxl
     goto :error
 )
 
 echo   - Instalando pdfplumber...
-pip install pdfplumber>=0.7.0 --quiet
+pip install "pdfplumber>=0.7.0" --quiet
 if %errorlevel% neq 0 (
     echo ERRO: Falha ao instalar pdfplumber
     goto :error
 )
 
 echo   - Instalando python-dotenv...
-pip install python-dotenv>=1.0.0 --quiet
+pip install "python-dotenv>=1.0.0" --quiet
 if %errorlevel% neq 0 (
     echo ERRO: Falha ao instalar python-dotenv
     goto :error
 )
 
-echo   - Instalando PyInstaller...
-pip install pyinstaller>=5.0.0 --quiet
+echo OK: Dependencias CORE instaladas
+
+:: Instala dependências GUI (obrigatórias para interface gráfica)
+echo.
+echo [5/7] Instalando dependencias GUI...
+
+echo   - Instalando customtkinter...
+pip install "customtkinter>=5.0.0" --quiet
 if %errorlevel% neq 0 (
-    echo ERRO: Falha ao instalar PyInstaller
+    echo ERRO: Falha ao instalar customtkinter
     goto :error
 )
 
-echo OK: Todas as dependencias instaladas com sucesso
+echo   - Instalando pillow...
+pip install "pillow>=9.0.0" --quiet
+if %errorlevel% neq 0 (
+    echo ERRO: Falha ao instalar pillow
+    goto :error
+)
+
+echo OK: Dependencias GUI instaladas
+
+:: Instala dependências opcionais (não críticas)
+echo.
+echo [6/7] Instalando dependencias opcionais...
+
+echo   - Instalando tkinterdnd2 (drag ^& drop)...
+pip install "tkinterdnd2>=0.3.0" --quiet
+if %errorlevel% neq 0 (
+    echo AVISO: tkinterdnd2 nao instalado (drag ^& drop desabilitado)
+    echo         Funcionalidade principal nao afetada
+) else (
+    echo OK: tkinterdnd2 instalado (drag ^& drop habilitado)
+)
+
+echo   - Instalando PyInstaller (build executavel)...
+pip install "pyinstaller>=5.0.0" --quiet
+if %errorlevel% neq 0 (
+    echo AVISO: PyInstaller nao instalado (build de executavel desabilitado)
+) else (
+    echo OK: PyInstaller instalado
+)
+
+echo OK: Dependencias opcionais processadas
 
 :: Cria arquivo .env exemplo se nao existir
 echo.
-echo [5/6] Configurando arquivo .env...
+echo [7/7] Configurando arquivo .env...
 if not exist ".env" (
-    echo # Configuracao do PDF para Excel Updater v3.0 > .env
+    echo # Configuracao do PDF para Excel Updater v3.2 > .env
     echo # ===================================================== >> .env
     echo # DIRETORIO DE TRABALHO (obrigatorio) >> .env
     echo # >> .env
-    echo # O MODELO_DIR agora e o diretorio de trabalho onde devem estar: >> .env
+    echo # O MODELO_DIR e o diretorio de trabalho onde devem estar: >> .env
     echo # - MODELO.xlsm (planilha modelo) >> .env
     echo # - arquivo.pdf (PDF a processar) >> .env
     echo # - DADOS/ (pasta criada automaticamente para resultados) >> .env
@@ -120,24 +156,25 @@ if not exist ".env" (
     echo OK: Arquivo .env ja existe
 )
 
-:: Verifica se script principal existe
-echo.
-echo [6/6] Verificando arquivos...
+:: Verifica se scripts principais existem
+if not exist "desktop_app.py" (
+    echo AVISO: desktop_app.py nao encontrado (interface grafica indisponivel)
+)
 if not exist "pdf_to_excel_updater.py" (
-    echo AVISO: pdf_to_excel_updater.py nao encontrado na pasta atual
-    echo        Certifique-se de que este arquivo esteja na mesma pasta do setup.bat
-) else (
-    echo OK: pdf_to_excel_updater.py encontrado
+    echo AVISO: pdf_to_excel_updater.py nao encontrado (linha de comando indisponivel)
+)
+if not exist "pdf_processor_core.py" (
+    echo AVISO: pdf_processor_core.py nao encontrado (modulo core ausente)
 )
 
-:: Testa instalacao
+:: Testa instalacao completa
 echo.
 echo ==========================================
-echo  Teste de Instalacao
+echo  Teste Completo de Instalacao
 echo ==========================================
 echo.
 
-echo Testando imports das bibliotecas...
+echo Testando dependencias CORE...
 python -c "import pandas; print('  pandas:', pandas.__version__)" 2>nul
 if %errorlevel% neq 0 (
     echo ERRO: pandas nao pode ser importado
@@ -163,30 +200,65 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo Testando dependencias GUI...
+python -c "import customtkinter; print('  customtkinter:', customtkinter.__version__)" 2>nul
+if %errorlevel% neq 0 (
+    echo ERRO: customtkinter nao pode ser importado
+    goto :error
+)
+
+python -c "import PIL; print('  pillow: OK')" 2>nul
+if %errorlevel% neq 0 (
+    echo ERRO: pillow nao pode ser importado
+    goto :error
+)
+
+echo.
+echo Testando dependencias opcionais...
+python -c "import tkinterdnd2; print('  tkinterdnd2: OK (drag ^& drop disponivel)')" 2>nul
+if %errorlevel% neq 0 (
+    echo AVISO: tkinterdnd2 nao disponivel (drag ^& drop desabilitado)
+)
+
+python -c "import PyInstaller; print('  pyinstaller: OK')" 2>nul
+if %errorlevel% neq 0 (
+    echo AVISO: PyInstaller nao disponivel (build de executavel desabilitado)
+)
+
+echo.
 echo ==========================================
 echo  INSTALACAO CONCLUIDA COM SUCESSO!
 echo ==========================================
 echo.
-echo Como usar (v3.0 - Diretorio de Trabalho):
+echo PDF para Excel Updater v3.2 - Como usar:
 echo.
-echo  1. Configure o diretorio de trabalho no .env:
-echo     MODELO_DIR=C:/seu/diretorio/de/trabalho
+echo  === INTERFACE GRAFICA (Recomendado) ===
+echo  python desktop_app.py
 echo.
-echo  2. Coloque no diretorio de trabalho:
-echo     - MODELO.xlsm (planilha modelo)
-echo     - arquivo.pdf (PDF a processar)
+echo  Funcionalidades:
+echo  - Interface moderna com abas organizadas
+echo  - Drag ^& Drop de arquivos PDF
+echo  - Historico persistido de processamentos
+echo  - Configuracoes automaticas
+echo  - Popup de progresso em tempo real
 echo.
-echo  3. Execute de qualquer local:
-echo     python pdf_to_excel_updater.py arquivo.pdf
-echo.
-echo  4. O resultado aparecera em:
-echo     DIRETORIO_TRABALHO/DADOS/arquivo.xlsm
+echo  === LINHA DE COMANDO (Alternativa) ===
+echo  python pdf_to_excel_updater.py               # Seletor de arquivo
+echo  python pdf_to_excel_updater.py arquivo.pdf   # Arquivo especifico
 echo.
 echo Configuracao obrigatoria:
-echo  - Edite o arquivo .env para configurar MODELO_DIR
-echo  - Coloque MODELO.xlsm no diretorio de trabalho
+echo  1. Edite o arquivo .env para configurar MODELO_DIR
+echo  2. Coloque MODELO.xlsm no diretorio de trabalho
+echo  3. Coloque arquivos PDF no mesmo diretorio
 echo.
-echo Para mais informacoes use: python pdf_to_excel_updater.py --help
+echo Estrutura esperada:
+echo  DIRETORIO_TRABALHO/
+echo  ├── MODELO.xlsm          ← Planilha modelo
+echo  ├── arquivo.pdf          ← PDF a processar
+echo  └── DADOS/               ← Resultados (criado automaticamente)
+echo      └── NOME_PESSOA.xlsm ← Arquivo final
+echo.
+echo Para mais informacoes: README.md
 echo.
 goto :end
 
@@ -202,7 +274,14 @@ echo Solucoes:
 echo  1. Execute como Administrador
 echo  2. Verifique conexao com internet
 echo  3. Tente instalar manualmente:
+echo     pip install -r requirements.txt
+echo  4. Para apenas linha de comando (sem GUI):
 echo     pip install pandas openpyxl pdfplumber python-dotenv
+echo.
+echo Se o problema persistir:
+echo  - Verifique se Python e pip estao atualizados
+echo  - Tente criar um ambiente virtual (venv)
+echo  - Consulte README.md para solucao de problemas
 echo.
 pause
 exit /b 1

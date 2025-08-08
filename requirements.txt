@@ -1,5 +1,59 @@
-pandas>=1.5.0
-openpyxl>=3.0.0
-pdfplumber>=0.7.0
-python-dotenv>=1.0.0
-pyinstaller>=5.0.0
+# PDF para Excel Updater v3.2 - Dependências Consolidadas
+# ===========================================================
+
+# ===== DEPENDÊNCIAS CORE (OBRIGATÓRIAS) =====
+# Necessárias para processamento básico e linha de comando
+
+pandas>=1.5.0              # Manipulação de dados e Excel
+openpyxl>=3.0.0            # Leitura/escrita de arquivos Excel (.xlsx/.xlsm)
+pdfplumber>=0.7.0          # Extração de texto de PDFs
+python-dotenv>=1.0.0       # Carregamento de configurações .env
+
+# ===== DEPENDÊNCIAS GUI (OBRIGATÓRIAS PARA INTERFACE) =====
+# Necessárias para desktop_app.py
+
+customtkinter>=5.0.0       # Interface gráfica moderna (substitui tkinter padrão)
+pillow>=9.0.0              # Manipulação de imagens (requerido pelo CustomTkinter)
+
+# ===== DEPENDÊNCIAS OPCIONAIS =====
+# Melhoram a experiência mas não são críticas
+
+tkinterdnd2>=0.3.0         # Drag & Drop de arquivos (opcional)
+                           # Se não instalado, usa botão "Selecionar" como fallback
+
+# ===== DEPENDÊNCIAS DE BUILD =====
+# Para geração de executável (opcional)
+
+pyinstaller>=5.0.0         # Geração de executável standalone
+
+# ===== NOTAS DE COMPATIBILIDADE =====
+#
+# - Python 3.7+ requerido
+# - Windows: Todas as dependências funcionam nativamente
+# - macOS: Todas as dependências funcionam nativamente  
+# - Linux: Pode precisar de python3-tk via gerenciador de pacotes
+#   Ubuntu/Debian: sudo apt-get install python3-tk
+#   CentOS/RHEL: sudo yum install tkinter
+#   Arch: sudo pacman -S tk
+#
+# - tkinterdnd2 é opcional - se falhar, drag & drop fica desabilitado
+#   mas todas as outras funcionalidades continuam funcionando
+#
+# ===== INSTALAÇÃO =====
+#
+# Opção 1 - Automática (Windows):
+#   setup.bat
+#
+# Opção 2 - Manual:
+#   pip install -r requirements.txt
+#
+# Opção 3 - Sem GUI (apenas linha de comando):
+#   pip install pandas openpyxl pdfplumber python-dotenv
+#
+# ===== VERIFICAÇÃO =====
+#
+# Teste todas as dependências:
+#   python -c "import pandas, openpyxl, pdfplumber, dotenv, customtkinter; print('OK')"
+#
+# Teste dependências opcionais:
+#   python -c "import tkinterdnd2; print('Drag & Drop disponível')"

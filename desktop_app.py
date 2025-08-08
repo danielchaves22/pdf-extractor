@@ -213,9 +213,19 @@ class AppLoader:
             # Etapa 3: Inicializar aplicação
             self._update_splash(55, "Inicializando interface...")
             time.sleep(0.5)
-            
-            # Cria aplicação principal (SEM mostrar ainda)
-            self.main_app = PDFExcelDesktopApp(show_immediately=False)
+
+            # Cria aplicação principal no thread principal
+            import threading
+            creation_event = threading.Event()
+
+            def create_app():
+                self.main_app = PDFExcelDesktopApp(show_immediately=False)
+                creation_event.set()
+
+            if self.splash:
+                self.splash.root.after(0, create_app)
+            creation_event.wait()
+
             self._update_splash(70, "Interface criada...")
             time.sleep(0.3)
             

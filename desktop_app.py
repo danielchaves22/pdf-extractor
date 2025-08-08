@@ -7,7 +7,7 @@ PDF para Excel Desktop App - Interface Gráfica
 Interface gráfica moderna usando CustomTkinter que utiliza o módulo
 pdf_processor_core.py para toda a lógica de processamento.
 
-Versão 3.2 - Com Sistema de Histórico e Abas Otimizado + Persistência
+Versão 3.2 - Com Sistema de Histórico e Abas Otimizado + Persistência em .data
 
 Dependências:
 pip install customtkinter pillow
@@ -73,8 +73,12 @@ class PersistenceManager:
         else:
             self.app_dir = Path(app_dir)
         
-        self.config_file = self.app_dir / "config.json"
-        self.history_file = self.app_dir / "history.json"
+        # Cria diretório .data para arquivos de persistência
+        self.data_dir = self.app_dir / ".data"
+        self.data_dir.mkdir(exist_ok=True)
+        
+        self.config_file = self.data_dir / "config.json"
+        self.history_file = self.data_dir / "history.json"
         
         # ID único para esta sessão
         self.session_id = str(uuid.uuid4())

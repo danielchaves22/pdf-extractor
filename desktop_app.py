@@ -639,10 +639,10 @@ class PDFExcelDesktopApp:
         # Se não deve mostrar imediatamente, esconde a janela
         if not show_immediately:
             self.root.withdraw()
-            self._should_load_data_immediately = False
-        else:
-            self._should_load_data_immediately = True
-        
+
+        # Define se deve carregar dados persistidos imediatamente
+        self._should_load_data_immediately = show_immediately
+
         # Gerenciador de persistência
         self.persistence = PersistenceManager()
         
@@ -676,13 +676,9 @@ class PDFExcelDesktopApp:
         
         # Configura drag and drop
         self.setup_drag_drop()
-        
-        # Carrega configurações iniciais apenas se deve mostrar imediatamente
-        if show_immediately:
-            self.load_initial_config()
-        else:
-            # Se não mostra imediatamente, agenda carregamento para depois
-            self.root.after(100, self.load_initial_config)
+
+        # Agenda carregamento da configuração inicial após a interface estar pronta
+        self.root.after(100, self.load_initial_config)
 
     def _get_processor(self):
         """Inicializa o processador core quando necessário"""
@@ -1498,56 +1494,41 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
                 messagebox.showerror("Erro", "Por favor, selecione apenas arquivos PDF.")
 
     def load_initial_config(self):
-        """Carrega configuração inicial em segundo plano"""
-        def task():
+        """Carrega configuração inicial"""
+        try:
+            processor = self._get_processor()
+
+            # Tenta carregar configuração do .env primeiro
             try:
-                processor = self._get_processor()
-                
-                # Tenta carregar configuração do .env primeiro
-                try:
-                    processor.load_env_config()
-                    if processor.trabalho_dir and not self.trabalho_dir:
-                        def apply_env_dir():
-                            if hasattr(self, 'dir_entry') and self.dir_entry:
-                                self.dir_entry.delete(0, 'end')
-                                self.dir_entry.insert(0, processor.trabalho_dir)
-                                self.validate_config()
-                                self.add_log_message("Configuração do .env carregada")
+                processor.load_env_config()
+                if processor.trabalho_dir and not self.trabalho_dir:
+                    if hasattr(self, 'dir_entry') and self.dir_entry:
+                        self.dir_entry.delete(0, 'end')
+                        self.dir_entry.insert(0, processor.trabalho_dir)
+                        self.validate_config()
+                        self.add_log_message("Configuração do .env carregada")
+            except Exception:
+                # Se falhar, já temos configuração persistida carregada
+                pass
 
-                        self.root.after(0, apply_env_dir)
-                except:
-                    # Se falhar, já temos configuração persistida carregada
-                    pass
-                
-                # Carrega configuração persistida para planilha preferida
-                config = self.persistence.load_config()
-                if config.get('preferred_sheet') and hasattr(self, 'sheet_entry') and self.sheet_entry:
-                    def apply_sheet():
-                        self.sheet_entry.delete(0, 'end')
-                        self.sheet_entry.insert(0, config['preferred_sheet'])
-                    
-                    self.root.after(0, apply_sheet)
-                
-                self.root.after(
-                    0,
-                    lambda: self.add_log_message("Configuração inicial processada"),
+            # Carrega configuração persistida para planilha preferida
+            config = self.persistence.load_config()
+            if config.get('preferred_sheet') and hasattr(self, 'sheet_entry') and self.sheet_entry:
+                self.sheet_entry.delete(0, 'end')
+                self.sheet_entry.insert(0, config['preferred_sheet'])
+
+            self.add_log_message("Configuração inicial processada")
+
+        except Exception as exc:
+            # Captura a string do erro imediatamente
+            error_message = f"Erro ao carregar configuração: {str(exc)}"
+            self.add_log_message(error_message)
+        finally:
+            if not self.trabalho_dir and hasattr(self, 'config_status'):
+                self.config_status.configure(
+                    text="⚙️ Configure o diretório de trabalho",
+                    text_color=self.colors['warning'],
                 )
-                
-            except Exception as exc:
-                # Captura a string do erro imediatamente
-                error_message = f"Erro ao carregar configuração: {str(exc)}"
-                self.root.after(0, lambda: self.add_log_message(error_message))
-            finally:
-                if not self.trabalho_dir:
-                    self.root.after(
-                        0,
-                        lambda: self.config_status.configure(
-                            text="⚙️ Configure o diretório de trabalho",
-                            text_color=self.colors['warning'],
-                        ) if hasattr(self, 'config_status') else None,
-                    )
-
-        threading.Thread(target=task, daemon=True).start()
 
     def select_directory(self):
         """Abre diálogo para seleção de diretório"""

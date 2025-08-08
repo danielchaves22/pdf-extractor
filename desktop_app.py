@@ -1021,12 +1021,6 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                 0,
                 lambda: self.add_log_message("Iniciando carregamento de configuração"),
             )
-<<<<<<< Updated upstream
-=======
-            
-            error_message = None
-            
->>>>>>> Stashed changes
             try:
                 processor = self._get_processor()
                 processor.load_env_config()
@@ -1039,7 +1033,6 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
 
                     self.root.after(0, apply_dir)
             except Exception as e:
-<<<<<<< Updated upstream
                 self.root.after(
                     0,
                     lambda: self.add_log_message(
@@ -1054,28 +1047,6 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                         text_color=self.colors['success'],
                     ),
                 )
-=======
-                # Captura a mensagem de erro antes de usar na lambda
-                error_message = str(e)
-            
-            # Processa erro se houver
-            if error_message:
-                self.root.after(
-                    0,
-                    lambda msg=error_message: self.add_log_message(
-                        f"Erro ao carregar configuração: {msg}"
-                    ),
-                )
-            
-            # Atualiza status final
-            self.root.after(
-                0,
-                lambda: self.config_status.configure(
-                    text="✅ Configuração pronta",
-                    text_color=self.colors['success'],
-                ),
-            )
->>>>>>> Stashed changes
 
         threading.Thread(target=task, daemon=True).start()
 

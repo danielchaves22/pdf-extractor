@@ -7,7 +7,7 @@ PDF para Excel Desktop App - Interface Gráfica
 Interface gráfica moderna usando CustomTkinter que utiliza o módulo
 pdf_processor_core.py para toda a lógica de processamento.
 
-Versão 3.2 - Com Sistema de Histórico e Abas Otimizado
+Versão 3.2 - Com Sistema de Histórico e Abas Otimizado + Persistência
 
 Dependências:
 pip install customtkinter pillow
@@ -30,6 +30,8 @@ from tkinter import filedialog, messagebox
 import threading
 import os
 import sys
+import json
+import uuid
 from pathlib import Path
 from datetime import datetime
 import webbrowser
@@ -54,6 +56,137 @@ except ImportError:
 # Configuração do CustomTkinter
 ctk.set_appearance_mode("dark")  # "System", "Dark", "Light"
 ctk.set_default_color_theme("blue")  # "blue", "green", "dark-blue"
+
+class PersistenceManager:
+    """Gerencia persistência de configurações e histórico"""
+    
+    def __init__(self, app_dir=None):
+        """Inicializa gerenciador de persistência"""
+        if app_dir is None:
+            # Usa diretório do executável ou script
+            if getattr(sys, 'frozen', False):
+                # Executável PyInstaller
+                self.app_dir = Path(sys.executable).parent
+            else:
+                # Script Python
+                self.app_dir = Path(__file__).parent
+        else:
+            self.app_dir = Path(app_dir)
+        
+        self.config_file = self.app_dir / "config.json"
+        self.history_file = self.app_dir / "history.json"
+        
+        # ID único para esta sessão
+        self.session_id = str(uuid.uuid4())
+        self.session_start = datetime.now()
+    
+    def load_config(self):
+        """Carrega configurações salvas"""
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            return {}
+        except Exception as e:
+            print(f"Erro ao carregar configurações: {e}")
+            return {}
+    
+    def save_config(self, config_data):
+        """Salva configurações"""
+        try:
+            config_data['last_saved'] = datetime.now().isoformat()
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config_data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Erro ao salvar configurações: {e}")
+    
+    def load_history(self, max_sessions=10):
+        """Carrega histórico das últimas sessões"""
+        try:
+            if self.history_file.exists():
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Retorna apenas as últimas N sessões
+                    sessions = data.get('sessions', [])[-max_sessions:]
+                    return sessions
+            return []
+        except Exception as e:
+            print(f"Erro ao carregar histórico: {e}")
+            return []
+    
+    def save_history_entry(self, entry_data):
+        """Adiciona entrada ao histórico da sessão atual"""
+        try:
+            # Carrega histórico existente
+            history_data = {'sessions': []}
+            if self.history_file.exists():
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    history_data = json.load(f)
+            
+            # Procura sessão atual ou cria nova
+            current_session = None
+            for session in history_data['sessions']:
+                if session['session_id'] == self.session_id:
+                    current_session = session
+                    break
+            
+            if current_session is None:
+                current_session = {
+                    'session_id': self.session_id,
+                    'start_time': self.session_start.isoformat(),
+                    'entries': []
+                }
+                history_data['sessions'].append(current_session)
+            
+            # Adiciona entrada
+            current_session['entries'].append({
+                'timestamp': entry_data.timestamp.isoformat(),
+                'pdf_file': entry_data.pdf_file,
+                'success': entry_data.success,
+                'result_data': entry_data.result_data,
+                'logs': entry_data.logs[:50]  # Limita logs para economizar espaço
+            })
+            
+            # Mantém apenas últimas 10 sessões
+            history_data['sessions'] = history_data['sessions'][-10:]
+            
+            # Salva
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                json.dump(history_data, f, indent=2, ensure_ascii=False)
+                
+        except Exception as e:
+            print(f"Erro ao salvar entrada do histórico: {e}")
+    
+    def clear_history(self):
+        """Limpa todo o histórico"""
+        try:
+            if self.history_file.exists():
+                self.history_file.unlink()
+        except Exception as e:
+            print(f"Erro ao limpar histórico: {e}")
+    
+    def load_all_history_entries(self):
+        """Carrega todas as entradas de histórico de todas as sessões"""
+        try:
+            sessions = self.load_history()
+            all_entries = []
+            
+            for session in sessions:
+                for entry_data in session.get('entries', []):
+                    # Reconstrói objeto HistoryEntry
+                    entry = HistoryEntry(
+                        timestamp=datetime.fromisoformat(entry_data['timestamp']),
+                        pdf_file=entry_data['pdf_file'],
+                        success=entry_data['success'],
+                        result_data=entry_data['result_data'],
+                        logs=entry_data['logs']
+                    )
+                    all_entries.append(entry)
+            
+            return all_entries
+        except Exception as e:
+            print(f"Erro ao carregar entradas do histórico: {e}")
+            return []
 
 class HistoryEntry:
     """Representa um entrada no histórico de processamentos"""
@@ -243,12 +376,15 @@ class PDFExcelDesktopApp:
         except:
             pass
         
+        # Gerenciador de persistência
+        self.persistence = PersistenceManager()
+        
         # Variáveis de estado
         self.selected_file = None
         self.trabalho_dir = None
         self.processing = False
         
-        # Histórico de processamentos
+        # Histórico de processamentos (será carregado da persistência)
         self.processing_history = []
         self.current_logs = []
         
@@ -274,7 +410,7 @@ class PDFExcelDesktopApp:
         # Configura drag and drop
         self.setup_drag_drop()
         
-        # Carrega configurações
+        # Carrega configurações iniciais
         self.load_initial_config()
 
     def _get_processor(self):
@@ -329,6 +465,66 @@ class PDFExcelDesktopApp:
         
         # Define aba inicial
         self.tabview.set("📄 Processamento")
+        
+        # Carrega dados persistidos APÓS criar toda a interface
+        self.root.after(100, self.load_persisted_data)  # Aguarda 100ms para interface estar pronta
+
+    def load_persisted_data(self):
+        """Carrega dados persistidos (configurações e histórico)"""
+        try:
+            # Carrega configurações
+            config = self.persistence.load_config()
+            
+            # Aplica configurações carregadas
+            if config.get('trabalho_dir'):
+                self.trabalho_dir = config['trabalho_dir']
+                if hasattr(self, 'dir_entry') and self.dir_entry:
+                    self.dir_entry.delete(0, 'end')
+                    self.dir_entry.insert(0, self.trabalho_dir)
+                    self.validate_config()
+            
+            if config.get('verbose_mode', False):
+                self.verbose_var.set(True)
+            
+            # Carrega planilha preferida se existe
+            if config.get('preferred_sheet') and hasattr(self, 'sheet_entry') and self.sheet_entry:
+                self.sheet_entry.delete(0, 'end')
+                self.sheet_entry.insert(0, config['preferred_sheet'])
+            
+            # Carrega histórico de todas as sessões
+            self.processing_history = self.persistence.load_all_history_entries()
+            if hasattr(self, 'history_status_label'):
+                self.update_history_display()
+                
+                # Atualiza status do histórico
+                if self.processing_history:
+                    total = len(self.processing_history)
+                    success_count = sum(1 for h in self.processing_history if h.success)
+                    self.history_status_label.configure(
+                        text=f"{total} processamentos no histórico ({success_count} sucessos, {total - success_count} falhas)"
+                    )
+            
+            self.add_log_message("Configurações e histórico carregados")
+            
+        except Exception as e:
+            self.add_log_message(f"Erro ao carregar dados persistidos: {e}")
+
+    def save_current_config(self):
+        """Salva configuração atual"""
+        try:
+            config = {
+                'trabalho_dir': self.trabalho_dir,
+                'verbose_mode': self.verbose_var.get(),
+            }
+            
+            # Adiciona planilha preferida se configurada
+            if self.sheet_entry and self.sheet_entry.get().strip():
+                config['preferred_sheet'] = self.sheet_entry.get().strip()
+            
+            self.persistence.save_config(config)
+            
+        except Exception as e:
+            self.add_log_message(f"Erro ao salvar configuração: {e}")
 
     def create_global_header(self, parent):
         """Cria o cabeçalho global da aplicação"""
@@ -376,7 +572,7 @@ class PDFExcelDesktopApp:
         # Título da seção
         history_title = ctk.CTkLabel(
             history_main,
-            text="📊 Histórico de Processamentos da Sessão",
+            text="📊 Histórico de Processamentos (Persistido)",
             font=ctk.CTkFont(size=18, weight="bold"),
             anchor="w"
         )
@@ -402,7 +598,7 @@ class PDFExcelDesktopApp:
         # Label de status
         self.history_status_label = ctk.CTkLabel(
             controls_frame,
-            text="Nenhum processamento realizado nesta sessão",
+            text="Nenhum processamento no histórico",
             font=ctk.CTkFont(size=12),
             text_color=self.colors['text_secondary']
         )
@@ -457,6 +653,9 @@ class PDFExcelDesktopApp:
         )
         self.sheet_entry.pack(fill="x", padx=20, pady=(0, 15))
         
+        # Bind para salvar quando planilha muda
+        self.sheet_entry.bind('<KeyRelease>', lambda e: self.root.after(1000, self.save_current_config))
+        
         # Seção de modo verboso
         verbose_frame = ctk.CTkFrame(settings_main)
         verbose_frame.pack(fill="x", padx=20, pady=(0, 15))
@@ -483,6 +682,7 @@ class PDFExcelDesktopApp:
             verbose_frame,
             text="Habilitar modo verboso (logs detalhados)",
             variable=self.verbose_var,
+            command=self.save_current_config,  # Salva quando muda
             font=ctk.CTkFont(size=12)
         )
         self.verbose_checkbox.pack(padx=20, pady=(0, 15), anchor="w")
@@ -528,6 +728,9 @@ class PDFExcelDesktopApp:
         
         # Desabilita modo verboso
         self.verbose_var.set(False)
+        
+        # Salva configurações resetadas
+        self.save_current_config()
         
         # Mensagem de confirmação
         messagebox.showinfo("Configurações", "Configurações redefinidas para valores padrão.")
@@ -673,11 +876,12 @@ class PDFExcelDesktopApp:
             return
         
         # Confirmação
-        if messagebox.askyesno("Confirmar", "Deseja limpar todo o histórico da sessão?"):
+        if messagebox.askyesno("Confirmar", "Deseja limpar todo o histórico persistido?"):
             self.processing_history.clear()
+            self.persistence.clear_history()  # Limpa arquivo de histórico
             self.update_history_display()
             self.history_status_label.configure(
-                text="Nenhum processamento realizado nesta sessão"
+                text="Nenhum processamento no histórico"
             )
 
     def add_to_history(self, pdf_file, success, result_data):
@@ -691,13 +895,17 @@ class PDFExcelDesktopApp:
         )
         
         self.processing_history.append(entry)
+        
+        # Salva no histórico persistido
+        self.persistence.save_history_entry(entry)
+        
         self.update_history_display()
         
         # Atualiza status
         total = len(self.processing_history)
         success_count = sum(1 for h in self.processing_history if h.success)
         self.history_status_label.configure(
-            text=f"{total} processamentos realizados ({success_count} sucessos, {total - success_count} falhas)"
+            text=f"{total} processamentos no histórico ({success_count} sucessos, {total - success_count} falhas)"
         )
 
     def update_history_display(self):
@@ -741,10 +949,12 @@ class PDFExcelDesktopApp:
         line1_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
         line1_frame.pack(fill="x")
         
-        # Mostra nome do arquivo Excel final ao invés do PDF
+        # Mostra nome do arquivo Excel final sem extensão
         excel_filename = "Arquivo não criado"
         if entry.success and entry.result_data.get('arquivo_final'):
-            excel_filename = entry.result_data['arquivo_final']
+            arquivo_final = entry.result_data['arquivo_final']
+            # Remove extensão do nome do arquivo
+            excel_filename = Path(arquivo_final).stem
         
         file_label = ctk.CTkLabel(
             line1_frame,
@@ -756,7 +966,7 @@ class PDFExcelDesktopApp:
         
         time_label = ctk.CTkLabel(
             line1_frame,
-            text=entry.timestamp.strftime("%H:%M:%S"),
+            text=entry.timestamp.strftime("%d/%m/%Y %H:%M:%S"),
             font=ctk.CTkFont(size=10),
             text_color=self.colors['text_secondary'],
             anchor="e"
@@ -1031,32 +1241,49 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
             )
             try:
                 processor = self._get_processor()
-                processor.load_env_config()
-                if processor.trabalho_dir:
-                    def apply_dir():
-                        self.dir_entry.delete(0, 'end')
-                        self.dir_entry.insert(0, processor.trabalho_dir)
-                        self.validate_config()
-                        self.add_log_message("Configuração inicial carregada")
+                
+                # Tenta carregar configuração do .env primeiro
+                try:
+                    processor.load_env_config()
+                    if processor.trabalho_dir and not self.trabalho_dir:
+                        def apply_env_dir():
+                            self.dir_entry.delete(0, 'end')
+                            self.dir_entry.insert(0, processor.trabalho_dir)
+                            self.validate_config()
+                            self.add_log_message("Configuração do .env carregada")
 
-                    self.root.after(0, apply_dir)
-                else:
-                    self.root.after(
-                        0,
-                        lambda: self.add_log_message("Nenhum diretório de trabalho configurado no .env"),
-                    )
+                        self.root.after(0, apply_env_dir)
+                except:
+                    # Se falhar, já temos configuração persistida carregada
+                    pass
+                
+                # Carrega configuração persistida para planilha preferida
+                config = self.persistence.load_config()
+                if config.get('preferred_sheet') and self.sheet_entry:
+                    def apply_sheet():
+                        self.sheet_entry.delete(0, 'end')
+                        self.sheet_entry.insert(0, config['preferred_sheet'])
+                    
+                    self.root.after(0, apply_sheet)
+                
+                self.root.after(
+                    0,
+                    lambda: self.add_log_message("Configuração inicial processada"),
+                )
+                
             except Exception as exc:
                 # Captura a string do erro imediatamente
                 error_message = f"Erro ao carregar configuração: {str(exc)}"
                 self.root.after(0, lambda: self.add_log_message(error_message))
             finally:
-                self.root.after(
-                    0,
-                    lambda: self.config_status.configure(
-                        text="⚙️ Configure o diretório de trabalho",
-                        text_color=self.colors['warning'],
-                    ),
-                )
+                if not self.trabalho_dir:
+                    self.root.after(
+                        0,
+                        lambda: self.config_status.configure(
+                            text="⚙️ Configure o diretório de trabalho",
+                            text_color=self.colors['warning'],
+                        ),
+                    )
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1094,6 +1321,8 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
                 )
                 self.trabalho_dir = directory
                 self.update_pdf_list()
+                # Salva configuração automaticamente
+                self.save_current_config()
             else:
                 self.config_status.configure(
                     text=f"❌ {message}",
@@ -1365,6 +1594,9 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
             )
             if not result:
                 return
+        
+        # Salva configuração atual antes de fechar
+        self.save_current_config()
         
         self.root.destroy()
 

@@ -174,9 +174,13 @@ class AppLoader:
         import threading
         load_thread = threading.Thread(target=self._load_main_app, daemon=True)
         load_thread.start()
-        
+
         # Executa loop do splash
         self.splash.root.mainloop()
+
+        # Após fechar o splash, inicia a aplicação principal
+        if self.main_app:
+            self.main_app.run()
     
     def _load_main_app(self):
         """Carrega aplicação principal em background"""
@@ -225,7 +229,7 @@ class AppLoader:
             
             self._update_splash(100, "Concluído!")
             time.sleep(0.2)
-            
+
             # Fecha splash e mostra aplicação principal
             self._show_main_app()
             
@@ -245,12 +249,11 @@ class AppLoader:
             # Fecha splash
             if self.splash:
                 self.splash.close()
-            
+
             # Mostra aplicação principal
             if self.main_app:
                 self.main_app.show()
-                self.main_app.run()
-        
+
         # Executa no thread principal
         if self.splash:
             self.splash.root.after(0, show)

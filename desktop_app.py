@@ -57,6 +57,253 @@ except ImportError:
 ctk.set_appearance_mode("dark")  # "System", "Dark", "Light"
 ctk.set_default_color_theme("blue")  # "blue", "green", "dark-blue"
 
+class SplashScreen:
+    """Tela de splash para carregamento inicial"""
+    
+    def __init__(self):
+        self.root = ctk.CTk()
+        self.root.title("Carregando...")
+        self.root.geometry("500x300")
+        self.root.resizable(False, False)
+        
+        # Remove barra de título e centraliza
+        try:
+            self.root.overrideredirect(True)  # Remove barra de título
+            self.center_window()
+        except:
+            pass
+        
+        # Configuração de transparência
+        try:
+            self.root.attributes('-alpha', 0.95)
+            self.root.attributes('-topmost', True)
+        except:
+            pass
+        
+        self.create_interface()
+        
+    def center_window(self):
+        """Centraliza a janela na tela"""
+        self.root.update_idletasks()
+        width = 500
+        height = 300
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+    
+    def create_interface(self):
+        """Cria interface do splash screen"""
+        # Frame principal
+        main_frame = ctk.CTkFrame(self.root, corner_radius=15)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Logo/Título
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="📄 Processamento de Folha",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color="#ffffff"
+        )
+        title_label.pack(pady=(30, 10))
+        
+        subtitle_label = ctk.CTkLabel(
+            main_frame,
+            text="PDF para Excel Updater v3.2",
+            font=ctk.CTkFont(size=14),
+            text_color="#b0b0b0"
+        )
+        subtitle_label.pack(pady=(0, 30))
+        
+        # Barra de progresso
+        self.progress_bar = ctk.CTkProgressBar(
+            main_frame,
+            width=300,
+            height=20,
+            corner_radius=10
+        )
+        self.progress_bar.pack(pady=(20, 10))
+        self.progress_bar.set(0)
+        
+        # Label de status
+        self.status_label = ctk.CTkLabel(
+            main_frame,
+            text="Iniciando aplicação...",
+            font=ctk.CTkFont(size=12),
+            text_color="#b0b0b0"
+        )
+        self.status_label.pack(pady=(10, 30))
+        
+        # Versão/Copyright
+        version_label = ctk.CTkLabel(
+            main_frame,
+            text="Sistema de Extração Automatizada • 2025",
+            font=ctk.CTkFont(size=10),
+            text_color="#808080"
+        )
+        version_label.pack(side="bottom", pady=(0, 15))
+    
+    def update_progress(self, progress, message):
+        """Atualiza progresso e mensagem"""
+        try:
+            self.progress_bar.set(progress / 100)
+            self.status_label.configure(text=message)
+            self.root.update()
+        except:
+            pass
+    
+    def close(self):
+        """Fecha o splash screen"""
+        try:
+            self.root.destroy()
+        except:
+            pass
+
+class AppLoader:
+    """Carregador da aplicação principal com splash screen"""
+    
+    def __init__(self):
+        self.splash = None
+        self.main_app = None
+        
+    def load_with_splash(self):
+        """Carrega aplicação com splash screen"""
+        # Cria e mostra splash
+        self.splash = SplashScreen()
+        
+        # Inicia carregamento da aplicação principal em thread separada
+        import threading
+        load_thread = threading.Thread(target=self._load_main_app, daemon=True)
+        load_thread.start()
+        
+        # Executa loop do splash
+        self.splash.root.mainloop()
+    
+    def _load_main_app(self):
+        """Carrega aplicação principal em background"""
+        import time  # Para delays
+        
+        try:
+            # Etapa 1: Verificar dependências
+            self._update_splash(10, "Verificando dependências...")
+            time.sleep(0.5)
+            
+            # Verifica CustomTkinter
+            import customtkinter
+            self._update_splash(20, "CustomTkinter carregado...")
+            time.sleep(0.3)
+            
+            # Verifica TkinterDnD
+            if not HAS_DND:
+                self._update_splash(25, "TkinterDnD não disponível (opcional)...")
+            else:
+                self._update_splash(25, "TkinterDnD carregado...")
+            time.sleep(0.2)
+            
+            # Etapa 2: Carregar processador core
+            self._update_splash(35, "Carregando processador PDF...")
+            # Teste de importação do core
+            from pdf_processor_core import PDFProcessorCore
+            self._update_splash(45, "Processador PDF carregado...")
+            time.sleep(0.3)
+            
+            # Etapa 3: Inicializar aplicação
+            self._update_splash(55, "Inicializando interface...")
+            time.sleep(0.5)
+            
+            # Cria aplicação principal (SEM mostrar ainda)
+            self.main_app = PDFExcelDesktopApp(show_immediately=False)
+            self._update_splash(70, "Interface criada...")
+            time.sleep(0.3)
+            
+            # Etapa 4: Carregar configurações persistidas
+            self._update_splash(80, "Carregando configurações...")
+            time.sleep(0.4)
+            
+            # Etapa 5: Finalizar
+            self._update_splash(95, "Finalizando carregamento...")
+            time.sleep(0.3)
+            
+            self._update_splash(100, "Concluído!")
+            time.sleep(0.2)
+            
+            # Fecha splash e mostra aplicação principal
+            self._show_main_app()
+            
+        except ImportError as e:
+            self._handle_dependency_error(e)
+        except Exception as e:
+            self._handle_loading_error(e)
+    
+    def _update_splash(self, progress, message):
+        """Atualiza splash screen thread-safe"""
+        if self.splash:
+            self.splash.root.after(0, lambda: self.splash.update_progress(progress, message))
+    
+    def _show_main_app(self):
+        """Mostra aplicação principal e fecha splash"""
+        def show():
+            # Fecha splash
+            if self.splash:
+                self.splash.close()
+            
+            # Mostra aplicação principal
+            if self.main_app:
+                self.main_app.show()
+                self.main_app.run()
+        
+        # Executa no thread principal
+        if self.splash:
+            self.splash.root.after(0, show)
+    
+    def _handle_dependency_error(self, error):
+        """Trata erro de dependências"""
+        def show_error():
+            if self.splash:
+                self.splash.close()
+            
+            error_msg = f"""
+ERRO: Dependências não instaladas!
+
+Para instalar as dependências necessárias, execute:
+
+pip install customtkinter pillow
+
+Opcionalmente (para drag & drop):
+pip install tkinterdnd2
+
+Dependências faltando: {str(error)}
+            """
+            
+            print(error_msg)
+            
+            # Tenta mostrar em messagebox se tkinter básico funcionar
+            try:
+                import tkinter.messagebox as mb
+                mb.showerror("Dependências não instaladas", error_msg)
+            except:
+                pass
+        
+        if self.splash:
+            self.splash.root.after(0, show_error)
+    
+    def _handle_loading_error(self, error):
+        """Trata erro durante carregamento"""
+        def show_error():
+            if self.splash:
+                self.splash.close()
+            
+            error_msg = f"Erro ao iniciar aplicação: {error}"
+            print(error_msg)
+            
+            try:
+                import tkinter.messagebox as mb
+                mb.showerror("Erro", error_msg)
+            except:
+                pass
+        
+        if self.splash:
+            self.splash.root.after(0, show_error)
+
 class PersistenceManager:
     """Gerencia persistência de configurações e histórico"""
     
@@ -351,7 +598,7 @@ class ProcessingPopup:
                 self.window = None
 
 class PDFExcelDesktopApp:
-    def __init__(self):
+    def __init__(self, show_immediately=True):
         # Configuração da janela principal usando CustomTkinter
         if HAS_DND:
             class CTkDnD(ctk.CTk, TkinterDnD.DnDWrapper):
@@ -375,6 +622,13 @@ class PDFExcelDesktopApp:
             pass
         except:
             pass
+        
+        # Se não deve mostrar imediatamente, esconde a janela
+        if not show_immediately:
+            self.root.withdraw()
+            self._should_load_data_immediately = False
+        else:
+            self._should_load_data_immediately = True
         
         # Gerenciador de persistência
         self.persistence = PersistenceManager()
@@ -410,8 +664,12 @@ class PDFExcelDesktopApp:
         # Configura drag and drop
         self.setup_drag_drop()
         
-        # Carrega configurações iniciais
-        self.load_initial_config()
+        # Carrega configurações iniciais apenas se deve mostrar imediatamente
+        if show_immediately:
+            self.load_initial_config()
+        else:
+            # Se não mostra imediatamente, agenda carregamento para depois
+            self.root.after(100, self.load_initial_config)
 
     def _get_processor(self):
         """Inicializa o processador core quando necessário"""
@@ -467,7 +725,9 @@ class PDFExcelDesktopApp:
         self.tabview.set("📄 Processamento")
         
         # Carrega dados persistidos APÓS criar toda a interface
-        self.root.after(100, self.load_persisted_data)  # Aguarda 100ms para interface estar pronta
+        # Mas apenas se deve mostrar imediatamente (não está sendo carregado via splash)
+        if hasattr(self, '_should_load_data_immediately') and self._should_load_data_immediately:
+            self.root.after(100, self.load_persisted_data)  # Aguarda 100ms para interface estar pronta
 
     def load_persisted_data(self):
         """Carrega dados persistidos (configurações e histórico)"""
@@ -1227,18 +1487,6 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
     def load_initial_config(self):
         """Carrega configuração inicial em segundo plano"""
         def task():
-            # Mensagem inicial na interface
-            self.root.after(
-                0,
-                lambda: self.config_status.configure(
-                    text="🔄 Carregando configurações...",
-                    text_color=self.colors['text_secondary'],
-                ),
-            )
-            self.root.after(
-                0,
-                lambda: self.add_log_message("Iniciando carregamento de configuração"),
-            )
             try:
                 processor = self._get_processor()
                 
@@ -1247,10 +1495,11 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
                     processor.load_env_config()
                     if processor.trabalho_dir and not self.trabalho_dir:
                         def apply_env_dir():
-                            self.dir_entry.delete(0, 'end')
-                            self.dir_entry.insert(0, processor.trabalho_dir)
-                            self.validate_config()
-                            self.add_log_message("Configuração do .env carregada")
+                            if hasattr(self, 'dir_entry') and self.dir_entry:
+                                self.dir_entry.delete(0, 'end')
+                                self.dir_entry.insert(0, processor.trabalho_dir)
+                                self.validate_config()
+                                self.add_log_message("Configuração do .env carregada")
 
                         self.root.after(0, apply_env_dir)
                 except:
@@ -1259,7 +1508,7 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
                 
                 # Carrega configuração persistida para planilha preferida
                 config = self.persistence.load_config()
-                if config.get('preferred_sheet') and self.sheet_entry:
+                if config.get('preferred_sheet') and hasattr(self, 'sheet_entry') and self.sheet_entry:
                     def apply_sheet():
                         self.sheet_entry.delete(0, 'end')
                         self.sheet_entry.insert(0, config['preferred_sheet'])
@@ -1282,7 +1531,7 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
                         lambda: self.config_status.configure(
                             text="⚙️ Configure o diretório de trabalho",
                             text_color=self.colors['warning'],
-                        ),
+                        ) if hasattr(self, 'config_status') else None,
                     )
 
         threading.Thread(target=task, daemon=True).start()
@@ -1600,6 +1849,33 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
         
         self.root.destroy()
 
+    def show(self):
+        """Mostra a janela principal"""
+        try:
+            # Carrega dados persistidos se ainda não foram carregados
+            if not hasattr(self, '_data_loaded'):
+                self.load_persisted_data()
+                self._data_loaded = True
+            
+            # Centraliza janela
+            self.root.update_idletasks()
+            width = 950
+            height = 600
+            x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+            y = (self.root.winfo_screenheight() // 2) - (height // 2)
+            self.root.geometry(f"{width}x{height}+{x}+{y}")
+            
+            # Mostra janela
+            self.root.deiconify()
+            self.root.focus_force()
+            self.root.lift()
+            
+            # Adiciona log de inicialização
+            self.add_log_message("Aplicação inicializada com sucesso")
+            
+        except Exception as e:
+            print(f"Erro ao mostrar janela principal: {e}")
+
     def run(self):
         """Inicia a aplicação"""
         # Bind para fechamento
@@ -1615,50 +1891,17 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
 def main():
     """Função principal"""
     try:
-        # Verifica dependências
-        import customtkinter
+        # Cria e executa loader com splash screen
+        loader = AppLoader()
+        loader.load_with_splash()
         
-        # Tenta importar TkinterDnD (opcional)
-        if not HAS_DND:
-            print("AVISO: tkinterdnd2 não instalado. Drag & drop desabilitado.")
-            print("Para habilitar: pip install tkinterdnd2")
-        
-        # Cria e executa aplicação
-        app = PDFExcelDesktopApp()
-        app.run()
-        
-    except ImportError as e:
-        error_msg = """
-ERRO: Dependências não instaladas!
-
-Para instalar as dependências necessárias, execute:
-
-pip install customtkinter pillow
-
-Opcionalmente (para drag & drop):
-pip install tkinterdnd2
-
-Dependências faltando: {}
-        """.format(str(e))
-        
-        print(error_msg)
-        
-        # Tenta mostrar em messagebox se tkinter básico funcionar
-        try:
-            import tkinter.messagebox as mb
-            mb.showerror("Dependências não instaladas", error_msg)
-        except:
-            pass
-        
-        sys.exit(1)
-    
     except Exception as e:
-        error_msg = f"Erro ao iniciar aplicação: {e}"
+        error_msg = f"Erro crítico ao iniciar aplicação: {e}"
         print(error_msg)
         
         try:
             import tkinter.messagebox as mb
-            mb.showerror("Erro", error_msg)
+            mb.showerror("Erro Crítico", error_msg)
         except:
             pass
         

@@ -33,7 +33,15 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import webbrowser
-from tkinterdnd2 import DND_FILES, TkinterDnD
+
+# Importa drag and drop se disponível
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    HAS_DND = True
+except ImportError:
+    HAS_DND = False
+    # Fallback para tkinter normal
+    TkinterDnD = tk
 
 # Importa o processador core
 try:
@@ -64,135 +72,159 @@ class ProcessingPopup:
         
     def show(self):
         """Mostra o popup de processamento"""
-        self.window = ctk.CTkToplevel(self.parent.root)
-        self.window.title("Processando PDF...")
-        
-        # Remove qualquer efeito de transparência ou grab
-        self.window.attributes('-alpha', 1.0)  # Força opacidade total
-        
-        # Configurações básicas primeiro
-        self.window.transient(self.parent.root)
-        self.window.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
-        
-        # Cria interface primeiro
-        self._create_interface()
-        
-        # Posiciona DEPOIS de criar a interface, com delay para garantir renderização
-        self.window.after(50, lambda: self._position_relative_to_parent(600, 400))
-        
-        # Força foco sem grab
-        self.window.focus_force()
-        self.window.lift()
-        self.window.attributes('-topmost', True)
-        self.window.after(100, lambda: self.window.attributes('-topmost', False))
+        try:
+            self.window = ctk.CTkToplevel(self.parent.root)
+            self.window.title("Processando PDF...")
+            self.window.geometry("600x400")
+            
+            # Configurações básicas de forma mais robusta
+            try:
+                self.window.attributes('-alpha', 1.0)
+                self.window.transient(self.parent.root)
+            except:
+                pass  # Ignora erros de atributos não suportados
+            
+            self.window.protocol("WM_DELETE_WINDOW", self._on_close_attempt)
+            
+            # Cria interface
+            self._create_interface()
+            
+            # Posicionamento simples
+            try:
+                # Tenta posicionamento relativo
+                parent_x = self.parent.root.winfo_x()
+                parent_y = self.parent.root.winfo_y()
+                x = parent_x + 50
+                y = parent_y + 50
+                self.window.geometry(f"600x400+{x}+{y}")
+            except:
+                # Fallback: posição padrão
+                self.window.geometry("600x400+300+200")
+            
+            # Foco simples
+            try:
+                self.window.focus_force()
+                self.window.lift()
+            except:
+                pass
+                
+        except Exception as e:
+            # Se falhar ao criar popup, usa progresso na janela principal
+            print(f"Aviso: Não foi possível criar popup de progresso: {e}")
+            self.window = None
+            self._setup_main_window_progress()
+
+    def _setup_main_window_progress(self):
+        """Setup de progresso na janela principal se popup falhar"""
+        # Conecta diretamente à janela principal se popup falhar
+        # Por agora, apenas define os callbacks como None para evitar erros
+        self.parent.popup_progress_bar = None
+        self.parent.popup_progress_label = None
+        self.parent.popup_log_textbox = None
 
     def _create_interface(self):
         """Cria a interface do popup separadamente"""
-    def _create_interface(self):
-        """Cria a interface do popup separadamente"""
-        # Header
-        header_frame = ctk.CTkFrame(self.window)
-        header_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
-        title_label = ctk.CTkLabel(
-            header_frame,
-            text="🔄 Processando PDF...",
-            font=ctk.CTkFont(size=16, weight="bold")
-        )
-        title_label.pack(pady=15)
-        
-        # Progress section
-        progress_frame = ctk.CTkFrame(self.window)
-        progress_frame.pack(fill="x", padx=20, pady=(0, 10))
-        
-        # Barra de progresso
-        self.progress_bar = ctk.CTkProgressBar(progress_frame, height=20)
-        self.progress_bar.pack(fill="x", padx=20, pady=(20, 10))
-        self.progress_bar.set(0)
-        
-        # Label de status
-        self.progress_label = ctk.CTkLabel(
-            progress_frame,
-            text="Iniciando processamento...",
-            font=ctk.CTkFont(size=12)
-        )
-        self.progress_label.pack(padx=20, pady=(0, 20))
-        
-        # Logs section
-        logs_frame = ctk.CTkFrame(self.window)
-        logs_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        logs_title = ctk.CTkLabel(
-            logs_frame,
-            text="📝 Log de Processamento",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        logs_title.pack(pady=(15, 10))
-        
-        # Textbox para logs
-        self.log_textbox = ctk.CTkTextbox(
-            logs_frame,
-            font=ctk.CTkFont(family="Consolas", size=10),
-            wrap="word"
-        )
-        self.log_textbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        
-        # Conecta callbacks do parent a este popup
-        self.parent.popup_progress_bar = self.progress_bar
-        self.parent.popup_progress_label = self.progress_label
-        self.parent.popup_log_textbox = self.log_textbox
-    
-    def _position_relative_to_parent(self, width, height):
-        """Posiciona o popup relativamente à janela principal de forma simples"""
+        if not self.window:
+            return
+            
         try:
-            # Método simples usando apenas winfo_rootx/rooty
-            parent_x = self.parent.root.winfo_rootx()
-            parent_y = self.parent.root.winfo_rooty()
-            parent_width = self.parent.root.winfo_width()
-            parent_height = self.parent.root.winfo_height()
+            # Header
+            header_frame = ctk.CTkFrame(self.window)
+            header_frame.pack(fill="x", padx=20, pady=(20, 10))
             
-            # Calcula posição centralizada
-            x = parent_x + (parent_width - width) // 2
-            y = parent_y + (parent_height - height) // 2
+            title_label = ctk.CTkLabel(
+                header_frame,
+                text="🔄 Processando PDF...",
+                font=ctk.CTkFont(size=16, weight="bold")
+            )
+            title_label.pack(pady=15)
             
-            # Aplica posição diretamente
-            self.window.geometry(f"{width}x{height}+{x}+{y}")
+            # Progress section
+            progress_frame = ctk.CTkFrame(self.window)
+            progress_frame.pack(fill="x", padx=20, pady=(0, 10))
             
-        except Exception:
-            # Fallback simples: posição fixa
-            self.window.geometry(f"{width}x{height}+300+200")
+            # Barra de progresso
+            self.progress_bar = ctk.CTkProgressBar(progress_frame, height=20)
+            self.progress_bar.pack(fill="x", padx=20, pady=(20, 10))
+            self.progress_bar.set(0)
+            
+            # Label de status
+            self.progress_label = ctk.CTkLabel(
+                progress_frame,
+                text="Iniciando processamento...",
+                font=ctk.CTkFont(size=12)
+            )
+            self.progress_label.pack(padx=20, pady=(0, 20))
+            
+            # Logs section
+            logs_frame = ctk.CTkFrame(self.window)
+            logs_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+            
+            logs_title = ctk.CTkLabel(
+                logs_frame,
+                text="📝 Log de Processamento",
+                font=ctk.CTkFont(size=14, weight="bold")
+            )
+            logs_title.pack(pady=(15, 10))
+            
+            # Textbox para logs
+            self.log_textbox = ctk.CTkTextbox(
+                logs_frame,
+                font=ctk.CTkFont(family="Consolas", size=10),
+                wrap="word"
+            )
+            self.log_textbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+            
+            # Conecta callbacks do parent a este popup
+            self.parent.popup_progress_bar = self.progress_bar
+            self.parent.popup_progress_label = self.progress_label
+            self.parent.popup_log_textbox = self.log_textbox
+            
+        except Exception as e:
+            print(f"Erro ao criar interface do popup: {e}")
+            self._setup_main_window_progress()
     
     def _on_close_attempt(self):
         """Impede fechamento durante processamento"""
         if self.parent.processing:
-            messagebox.showwarning(
-                "Processamento em andamento",
-                "Aguarde a conclusão do processamento."
-            )
+            try:
+                messagebox.showwarning(
+                    "Processamento em andamento",
+                    "Aguarde a conclusão do processamento."
+                )
+            except:
+                pass
         else:
             self.close()
     
     def close(self):
-        """Fecha o popup sem efeitos de transparência"""
+        """Fecha o popup"""
         if self.window:
-            # Desconecta callbacks primeiro
-            self.parent.popup_progress_bar = None
-            self.parent.popup_progress_label = None
-            self.parent.popup_log_textbox = None
-            
-            # Destrói janela diretamente sem grab_release
-            self.window.destroy()
-            self.window = None
-            
-            # Força foco na janela principal sem grab/release
-            self.parent.root.focus_force()
-            self.parent.root.lift()
-            self.parent.root.attributes('-alpha', 1.0)  # Força opacidade total
+            try:
+                # Desconecta callbacks primeiro
+                self.parent.popup_progress_bar = None
+                self.parent.popup_progress_label = None
+                self.parent.popup_log_textbox = None
+                
+                # Destrói janela
+                self.window.destroy()
+                self.window = None
+                
+                # Força foco na janela principal
+                self.parent.root.focus_force()
+                self.parent.root.lift()
+            except Exception as e:
+                print(f"Erro ao fechar popup: {e}")
+                self.window = None
 
 class PDFExcelDesktopApp:
     def __init__(self):
         # Configuração da janela principal simples
-        self.root = TkinterDnD.Tk()
+        if HAS_DND:
+            self.root = TkinterDnD.Tk()
+        else:
+            self.root = tk.Tk()
+        
         self.root.title("Processamento de Folha de Pagamento v3.2")
         self.root.geometry("950x600")
         self.root.resizable(False, False)
@@ -229,12 +261,6 @@ class PDFExcelDesktopApp:
 
         # Processador será inicializado sob demanda
         self.processor = None
-        
-        # Debug para posicionamento de popups (pode ser ativado se necessário)
-        # self._debug_positioning = True  # Descomente para ativar logs de debug
-        
-        # Para ativar debug de posicionamento temporariamente, descomente:
-        # print("Para ativar debug de posicionamento, adicione: app._debug_positioning = True")
 
         # Configuração de estilo
         self.setup_styles()
@@ -644,7 +670,6 @@ class PDFExcelDesktopApp:
             return
         
         # Confirmação
-        from tkinter import messagebox
         if messagebox.askyesno("Confirmar", "Deseja limpar todo o histórico da sessão?"):
             self.processing_history.clear()
             self.update_history_display()
@@ -821,172 +846,153 @@ class PDFExcelDesktopApp:
 
     def show_history_details(self, entry):
         """Mostra detalhes de um processamento do histórico"""
-        # Cria janela de detalhes
-        details_window = ctk.CTkToplevel(self.root)
-        details_window.title(f"Detalhes - {entry.pdf_file}")
-        
-        # Remove efeitos de transparência
-        details_window.attributes('-alpha', 1.0)
-        
-        # Configurações básicas primeiro
-        details_window.transient(self.root)
-        
-        # Cria interface primeiro
-        self._create_details_interface(details_window, entry)
-        
-        # Posiciona DEPOIS de criar a interface, com delay
-        details_window.after(50, lambda: self._position_window_relative_to_parent(details_window, 700, 600))
-        
-        # Força foco sem grab
-        details_window.focus_force()
-        details_window.lift()
-        details_window.attributes('-topmost', True)
-        details_window.after(100, lambda: details_window.attributes('-topmost', False))
+        try:
+            # Cria janela de detalhes
+            details_window = ctk.CTkToplevel(self.root)
+            details_window.title(f"Detalhes - {entry.pdf_file}")
+            details_window.geometry("700x600")
+            
+            # Configurações básicas de forma mais robusta
+            try:
+                details_window.attributes('-alpha', 1.0)
+                details_window.transient(self.root)
+            except:
+                pass  # Ignora erros de atributos não suportados
+            
+            # Cria interface primeiro
+            self._create_details_interface(details_window, entry)
+            
+            # Posicionamento simples
+            try:
+                # Tenta posicionamento relativo
+                parent_x = self.root.winfo_x()
+                parent_y = self.root.winfo_y()
+                x = parent_x + 75
+                y = parent_y + 75
+                details_window.geometry(f"700x600+{x}+{y}")
+            except:
+                # Fallback: posição padrão
+                details_window.geometry("700x600+350+250")
+            
+            # Foco simples
+            try:
+                details_window.focus_force()
+                details_window.lift()
+            except:
+                pass
+                
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir janela de detalhes:\n{e}")
 
     def _create_details_interface(self, details_window, entry):
         """Cria a interface da janela de detalhes separadamente"""
-    def _create_details_interface(self, details_window, entry):
-        """Cria a interface da janela de detalhes separadamente"""
-        # Header
-        header_frame = ctk.CTkFrame(details_window)
-        header_frame.pack(fill="x", padx=20, pady=(20, 10))
-        
-        status_icon = "✅" if entry.success else "❌"
-        status_text = "SUCESSO" if entry.success else "FALHA"
-        status_color = self.colors['success'] if entry.success else self.colors['error']
-        
-        title_label = ctk.CTkLabel(
-            header_frame,
-            text=f"{status_icon} {status_text} - {entry.pdf_file}",
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=status_color
-        )
-        title_label.pack(pady=15)
-        
-        time_label = ctk.CTkLabel(
-            header_frame,
-            text=f"Processado em: {entry.timestamp.strftime('%d/%m/%Y às %H:%M:%S')}",
-            font=ctk.CTkFont(size=12),
-            text_color=self.colors['text_secondary']
-        )
-        time_label.pack(pady=(0, 15))
-        
-        # Resultados
-        if entry.success:
-            results_frame = ctk.CTkFrame(details_window)
-            results_frame.pack(fill="x", padx=20, pady=(0, 10))
+        try:
+            # Header
+            header_frame = ctk.CTkFrame(details_window)
+            header_frame.pack(fill="x", padx=20, pady=(20, 10))
             
-            results_title = ctk.CTkLabel(
-                results_frame,
-                text="📊 Resultados do Processamento",
-                font=ctk.CTkFont(size=14, weight="bold")
+            status_icon = "✅" if entry.success else "❌"
+            status_text = "SUCESSO" if entry.success else "FALHA"
+            status_color = self.colors['success'] if entry.success else self.colors['error']
+            
+            title_label = ctk.CTkLabel(
+                header_frame,
+                text=f"{status_icon} {status_text} - {entry.pdf_file}",
+                font=ctk.CTkFont(size=16, weight="bold"),
+                text_color=status_color
             )
-            results_title.pack(pady=(15, 10))
+            title_label.pack(pady=15)
             
-            # Estatísticas
-            stats_text = f"""
-Total de períodos: {entry.result_data.get('total_extracted', 0)}
+            time_label = ctk.CTkLabel(
+                header_frame,
+                text=f"Processado em: {entry.timestamp.strftime('%d/%m/%Y às %H:%M:%S')}",
+                font=ctk.CTkFont(size=12),
+                text_color=self.colors['text_secondary']
+            )
+            time_label.pack(pady=(0, 15))
+            
+            # Resultados
+            if entry.success:
+                results_frame = ctk.CTkFrame(details_window)
+                results_frame.pack(fill="x", padx=20, pady=(0, 10))
+                
+                results_title = ctk.CTkLabel(
+                    results_frame,
+                    text="📊 Resultados do Processamento",
+                    font=ctk.CTkFont(size=14, weight="bold")
+                )
+                results_title.pack(pady=(15, 10))
+                
+                # Estatísticas
+                stats_text = f"""Total de períodos: {entry.result_data.get('total_extracted', 0)}
 FOLHA NORMAL: {entry.result_data.get('folha_normal_periods', 0)} períodos
 13 SALÁRIO: {entry.result_data.get('salario_13_periods', 0)} períodos
-Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
-"""
-            if entry.result_data.get('person_name'):
-                stats_text += f"Nome detectado: {entry.result_data['person_name']}\n"
+Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}"""
+                
+                if entry.result_data.get('person_name'):
+                    stats_text += f"\nNome detectado: {entry.result_data['person_name']}"
+                
+                stats_label = ctk.CTkLabel(
+                    results_frame,
+                    text=stats_text,
+                    font=ctk.CTkFont(size=11),
+                    anchor="w",
+                    justify="left"
+                )
+                stats_label.pack(padx=15, pady=(0, 15), anchor="w")
             
-            stats_label = ctk.CTkLabel(
-                results_frame,
-                text=stats_text.strip(),
-                font=ctk.CTkFont(size=11),
-                anchor="w",
-                justify="left"
+            # Logs
+            logs_frame = ctk.CTkFrame(details_window)
+            logs_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+            
+            logs_title = ctk.CTkLabel(
+                logs_frame,
+                text="📝 Log do Processamento",
+                font=ctk.CTkFont(size=14, weight="bold")
             )
-            stats_label.pack(padx=15, pady=(0, 15), anchor="w")
-        
-        # Logs
-        logs_frame = ctk.CTkFrame(details_window)
-        logs_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
-        
-        logs_title = ctk.CTkLabel(
-            logs_frame,
-            text="📝 Log do Processamento",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        logs_title.pack(pady=(15, 10))
-        
-        # Textbox com logs
-        logs_textbox = ctk.CTkTextbox(
-            logs_frame,
-            font=ctk.CTkFont(family="Consolas", size=10)
-        )
-        logs_textbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
-        
-        # Adiciona logs
-        for log in entry.logs:
-            logs_textbox.insert("end", log + "\n")
-        
-        logs_textbox.configure(state="disabled")
-        
-        # Botão fechar
-        close_button = ctk.CTkButton(
-            details_window,
-            text="Fechar",
-            command=lambda: self._close_details_window(details_window),
-            width=100
-        )
-        close_button.pack(pady=(0, 20))
-
-    def _position_window_relative_to_parent(self, window, width, height):
-        """Posiciona uma janela relativamente à janela principal usando coordenadas exatas"""
-        try:
-            # Força atualização da janela principal para obter coordenadas corretas
-            self.root.update_idletasks()
+            logs_title.pack(pady=(15, 10))
             
-            # Obtém coordenadas absolutas da janela principal na tela
-            parent_x = self.root.winfo_rootx()
-            parent_y = self.root.winfo_rooty()
-            parent_width = self.root.winfo_width()
-            parent_height = self.root.winfo_height()
+            # Textbox com logs
+            logs_textbox = ctk.CTkTextbox(
+                logs_frame,
+                font=ctk.CTkFont(family="Consolas", size=10)
+            )
+            logs_textbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
             
-            # Calcula posição centralizada relativamente à janela principal
-            x = parent_x + (parent_width - width) // 2
-            y = parent_y + (parent_height - height) // 2
+            # Adiciona logs
+            for log in entry.logs:
+                logs_textbox.insert("end", log + "\n")
             
-            # Garante que não fique fora da tela (mas prioriza estar no mesmo monitor)
-            screen_width = self.root.winfo_screenwidth()
-            screen_height = self.root.winfo_screenheight()
+            logs_textbox.configure(state="disabled")
             
-            # Ajusta apenas se realmente sair da tela
-            if x + width > screen_width:
-                x = screen_width - width - 10
-            if x < 0:
-                x = 10
-            if y + height > screen_height:
-                y = screen_height - height - 10
-            if y < 0:
-                y = 10
-            
-            # Define geometria com coordenadas absolutas
-            window.geometry(f"{width}x{height}+{x}+{y}")
+            # Botão fechar
+            close_button = ctk.CTkButton(
+                details_window,
+                text="Fechar",
+                command=lambda: self._close_details_window(details_window),
+                width=100
+            )
+            close_button.pack(pady=(0, 20))
             
         except Exception as e:
-            # Fallback: centraliza na tela
-            screen_width = self.root.winfo_screenwidth()
-            screen_height = self.root.winfo_screenheight()
-            x = (screen_width - width) // 2
-            y = (screen_height - height) // 2
-            window.geometry(f"{width}x{height}+{x}+{y}")
+            print(f"Erro ao criar interface de detalhes: {e}")
 
     def _close_details_window(self, window):
-        """Fecha janela de detalhes sem efeitos de transparência"""
-        window.destroy()
-        
-        # Força foco na janela principal sem grab/release
-        self.root.focus_force()
-        self.root.lift()
-        self.root.attributes('-alpha', 1.0)  # Força opacidade total
+        """Fecha janela de detalhes"""
+        try:
+            window.destroy()
+            
+            # Força foco na janela principal
+            self.root.focus_force()
+            self.root.lift()
+        except Exception as e:
+            pass  # Ignora erros ao fechar
 
     def setup_drag_drop(self):
         """Configura drag and drop de arquivos"""
+        if not HAS_DND:
+            return
+            
         try:
             self.drop_frame.drop_target_register(DND_FILES)
             self.drop_frame.dnd_bind('<<Drop>>', self.handle_drop)
@@ -1007,7 +1013,6 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
 
     def load_initial_config(self):
         """Carrega configuração inicial em segundo plano"""
-
         def task():
             # Mensagem inicial na interface
             self.root.after(
@@ -1032,19 +1037,21 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
                         self.add_log_message("Configuração inicial carregada")
 
                     self.root.after(0, apply_dir)
-            except Exception as e:
-                self.root.after(
-                    0,
-                    lambda: self.add_log_message(
-                        f"Erro ao carregar configuração: {e}"
-                    ),
-                )
+                else:
+                    self.root.after(
+                        0,
+                        lambda: self.add_log_message("Nenhum diretório de trabalho configurado no .env"),
+                    )
+            except Exception as exc:
+                # Captura a string do erro imediatamente
+                error_message = f"Erro ao carregar configuração: {str(exc)}"
+                self.root.after(0, lambda: self.add_log_message(error_message))
             finally:
                 self.root.after(
                     0,
                     lambda: self.config_status.configure(
-                        text="✅ Configuração pronta",
-                        text_color=self.colors['success'],
+                        text="⚙️ Configure o diretório de trabalho",
+                        text_color=self.colors['warning'],
                     ),
                 )
 
@@ -1155,34 +1162,59 @@ Arquivo criado: {entry.result_data.get('arquivo_final', 'N/A')}
 
     def add_log_message(self, message):
         """Adiciona mensagem ao log"""
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}"
-        
-        # Adiciona ao log atual da sessão
-        self.current_logs.append(log_entry)
-        
-        # Adiciona ao textbox do popup se estiver aberto
-        if self.popup_log_textbox:
-            self.popup_log_textbox.insert("end", log_entry + "\n")
-            self.popup_log_textbox.see("end")
-        
-        # Atualiza a interface
-        self.root.update_idletasks()
+        try:
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"[{timestamp}] {message}"
+            
+            # Adiciona ao log atual da sessão
+            self.current_logs.append(log_entry)
+            
+            # Adiciona ao textbox do popup se estiver aberto
+            if self.popup_log_textbox:
+                try:
+                    self.popup_log_textbox.insert("end", log_entry + "\n")
+                    self.popup_log_textbox.see("end")
+                except:
+                    pass  # Widget pode ter sido destruído
+            
+            # Atualiza a interface
+            try:
+                self.root.update_idletasks()
+            except:
+                pass  # Evita erros se janela foi fechada
+                
+        except Exception as e:
+            # Silenciosamente ignora erros de log para não interromper processamento
+            pass
 
     def update_progress(self, progress, message=""):
         """Atualiza barra de progresso"""
-        # Normaliza progresso (0-100 para 0-1)
-        normalized_progress = max(0, min(100, progress)) / 100
-        
-        # Atualiza popup se estiver aberto
-        if self.popup_progress_bar:
-            self.popup_progress_bar.set(normalized_progress)
-        
-        if message and self.popup_progress_label:
-            self.popup_progress_label.configure(text=message)
-        
-        # Atualiza a interface
-        self.root.update_idletasks()
+        try:
+            # Normaliza progresso (0-100 para 0-1)
+            normalized_progress = max(0, min(100, progress)) / 100
+            
+            # Atualiza popup se estiver aberto
+            if self.popup_progress_bar:
+                try:
+                    self.popup_progress_bar.set(normalized_progress)
+                except:
+                    pass  # Widget pode ter sido destruído
+            
+            if message and self.popup_progress_label:
+                try:
+                    self.popup_progress_label.configure(text=message)
+                except:
+                    pass  # Widget pode ter sido destruído
+            
+            # Atualiza a interface
+            try:
+                self.root.update_idletasks()
+            except:
+                pass  # Evita erros se janela foi fechada
+                
+        except Exception as e:
+            # Silenciosamente ignora erros de progresso para não interromper processamento
+            pass
 
     def process_pdf(self):
         """Processa o PDF selecionado"""
@@ -1352,9 +1384,7 @@ def main():
         import customtkinter
         
         # Tenta importar TkinterDnD (opcional)
-        try:
-            import tkinterdnd2
-        except ImportError:
+        if not HAS_DND:
             print("AVISO: tkinterdnd2 não instalado. Drag & drop desabilitado.")
             print("Para habilitar: pip install tkinterdnd2")
         

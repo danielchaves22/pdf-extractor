@@ -34,6 +34,7 @@ import os
 import sys
 import json
 import uuid
+import subprocess
 from pathlib import Path
 from datetime import datetime
 import webbrowser
@@ -1674,9 +1675,69 @@ class PDFExcelDesktopApp:
         
         def on_leave(event):
             item_frame.configure(fg_color=["gray92", "gray14"])
-        
+
         item_frame.bind("<Enter>", on_enter)
         item_frame.bind("<Leave>", on_leave)
+
+    def open_data_file(self, entry):
+        """Abre o arquivo Excel associado à entrada do histórico"""
+        try:
+            file_path = entry.result_data.get('excel_path')
+            if not file_path and self.trabalho_dir:
+                arquivo_rel = entry.result_data.get('arquivo_final')
+                if arquivo_rel:
+                    file_path = Path(self.trabalho_dir) / arquivo_rel
+
+            if not file_path:
+                messagebox.showerror("Erro", "Caminho do arquivo não disponível.")
+                return
+
+            file_path = Path(file_path)
+            if not file_path.exists():
+                messagebox.showerror("Erro", f"Arquivo não encontrado: {file_path}")
+                return
+
+            if sys.platform.startswith('win'):
+                os.startfile(file_path)  # type: ignore[attr-defined]
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', str(file_path)])
+            else:
+                subprocess.Popen(['xdg-open', str(file_path)])
+
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir o arquivo: {e}")
+
+    def show_history_details(self, entry):
+        """Mostra detalhes da entrada do histórico"""
+        details_window = ctk.CTkToplevel(self.root)
+        details_window.title("Detalhes do Histórico")
+        details_window.geometry("700x500")
+
+        textbox = ctk.CTkTextbox(details_window, wrap="word")
+        textbox.pack(fill="both", expand=True, padx=10, pady=10)
+
+        lines = [
+            f"PDF: {entry.pdf_file}",
+            f"Data/Hora: {entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}",
+            f"Resultado: {'Sucesso' if entry.success else 'Falha'}",
+        ]
+
+        if entry.success:
+            if entry.result_data.get('arquivo_final'):
+                lines.append(f"Arquivo Excel: {entry.result_data['arquivo_final']}")
+            if entry.result_data.get('person_name'):
+                lines.append(f"Pessoa: {entry.result_data['person_name']}")
+            if entry.result_data.get('total_extracted') is not None:
+                lines.append(f"Períodos processados: {entry.result_data.get('total_extracted', 0)}")
+        else:
+            lines.append(f"Erro: {entry.result_data.get('error', 'Erro desconhecido')}")
+
+        if entry.logs:
+            lines.append("\nLogs:")
+            lines.extend(entry.logs)
+
+        textbox.insert("1.0", "\n".join(lines))
+        textbox.configure(state="disabled")
 
     def add_log_message(self, message):
         """Adiciona mensagem ao log"""

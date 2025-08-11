@@ -25,10 +25,13 @@
 | Código PDF | Descrição | Excel Coluna | Status | Observações |
 |------------|-----------|--------------|--------|-------------|
 | `01003601` | PREMIO PROD. MENSAL | **X** (PRODUÇÃO) | ✅ | ⚡ **FALLBACK**: Se ÍNDICE vazio, usar VALOR |
+| `01017101` | PREMIO PRO. (R) | **X** (PRODUÇÃO) | ✅ | ⚡ **FALLBACK**: Se ÍNDICE vazio, usar VALOR |
 | `01007301` | HORAS EXT.100%-180 | **Y** (INDICE HE 100%) | ✅ | 🕐 Suporta formato horas |
-| `01009001` | ADIC.NOT.25%-180 | **AC** (INDICE ADC. NOT.) | ✅ | 🕐 Suporta formato horas |
+| `01009001` | ADIC.NOT.25%-180 | **AE** (INDICE ADC. NOT.) | ✅ | 🕐 Suporta formato horas |
+| `01022001` | ADICIONAL NOTURNO 25% (R) | **AE** (INDICE ADC. NOT.) | ✅ | 🕐 Suporta formato horas |
 | `01003501` | HORAS EXT.75%-180 | **AA** (INDICE HE 75%) | ✅ | 🕐 Suporta formato horas |
-| `02007501` | DIFER.PROV. HORAS EXTRAS 75% | **AA** (INDICE HE 75%) | ✅ | 🕐 Código alternativo para HE 75% |
+| `01007501` | HORAS EXT.75% | **AA** (INDICE HE 75%) | ✅ | 🕐 Suporta formato horas |
+| `02007501` | DIFER.PROV. HORAS EXTRAS 75% | **AC** (INDICE DIF. HE 75%) | ✅ | 🕐 Código alternativo para HE 75% |
 
 ### 🔴 FOLHA NORMAL - Obter da Coluna VALOR (Último número da linha)
 

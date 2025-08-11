@@ -7,7 +7,10 @@ PDF Processor Core - Lógica de Processamento
 Módulo central com toda a lógica de processamento de PDFs e atualização de Excel.
 Separado da interface gráfica para melhor organização e reutilização.
 
-Versão 3.2
+Versão 3.2.1 - ATUALIZAÇÕES DE REGRAS:
+- Colunas reorganizadas: AC→INDICE DIF. HE 75%, AE→INDICE ADC. NOT.
+- Novos códigos: 01017101, 01022001, 01007501
+- Mapeamento corrigido conforme nova estrutura
 
 Autor: Sistema de Extração Automatizada
 Data: 2025
@@ -41,14 +44,17 @@ class PDFProcessorCore:
         self.progress_callback = progress_callback
         self.log_callback = log_callback
         
-        # Regras de mapeamento para colunas específicas do Excel
+        # Regras de mapeamento para colunas específicas do Excel - ATUALIZADAS v3.2.1
         self.mapping_rules = {
             # FOLHA NORMAL - Obter da coluna ÍNDICE (com fallback especial para PRODUÇÃO)
             '01003601': {'code': 'PREMIO PROD. MENSAL', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},
+            '01017101': {'code': 'PREMIO PRO. (R)', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},  # NOVO
             '01007301': {'code': 'HORAS EXT.100%-180', 'excel_column': 'Y', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
-            '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AC', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AE', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # MUDOU: AC → AE
+            '01022001': {'code': 'ADICIONAL NOTURNO 25% (R)', 'excel_column': 'AE', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # NOVO
             '01003501': {'code': 'HORAS EXT.75%-180', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
-            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '01007501': {'code': 'HORAS EXT.75%', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # NOVO
+            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AC', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # MUDOU: AA → AC
             
             # FOLHA NORMAL - Obter da coluna VALOR
             '09090301_NORMAL': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor', 'folha_type': 'FOLHA NORMAL', 'original_code': '09090301'},

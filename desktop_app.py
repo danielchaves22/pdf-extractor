@@ -1202,17 +1202,17 @@ class PDFExcelDesktopApp:
             self.drop_frame.pack(side="left", padx=(0, 20))
             self.drop_frame.pack_propagate(False)
             
-            drop_label = ctk.CTkLabel(
+            self.drop_label = ctk.CTkLabel(
                 self.drop_frame,
                 text="🎯 Ou arraste PDFs aqui",
                 font=ctk.CTkFont(size=11),
                 text_color=self.colors['text_secondary']
             )
-            drop_label.pack(expand=True)
+            self.drop_label.pack(expand=True)
             
             # Bind para clique na área de drop
             self.drop_frame.bind("<Button-1>", lambda e: self.select_pdfs())
-            drop_label.bind("<Button-1>", lambda e: self.select_pdfs())
+            self.drop_label.bind("<Button-1>", lambda e: self.select_pdfs())
         
         # Botão processar (mais compacto)
         self.process_button = ctk.CTkButton(
@@ -1254,33 +1254,24 @@ class PDFExcelDesktopApp:
 
     def update_selected_files_display(self):
         """Atualiza display dos arquivos selecionados"""
-        # Atualiza labels principais
-        if not self.selected_files:
-            self.drop_main_label.configure(
-                text="Nenhum arquivo selecionado",
-                text_color=self.colors['text_secondary']
-            )
-            self.drop_sub_label.configure(
-                text="🎯 Arraste PDFs aqui ou use o botão abaixo",
-                text_color=self.colors['text_secondary']
-            )
-        else:
-            count = len(self.selected_files)
-            self.drop_main_label.configure(
-                text=f"📄 {count} arquivo{'s' if count > 1 else ''} selecionado{'s' if count > 1 else ''}",
-                text_color=self.colors['success']
-            )
-            if count == 1:
-                self.drop_sub_label.configure(
-                    text="Processamento individual configurado",
-                    text_color=self.colors['success']
+        # Atualiza contador e área de drop
+        count = len(self.selected_files)
+        self.file_counter_label.configure(
+            text=f"{count} arquivo{'s' if count != 1 else ''}",
+            text_color=self.colors['text_secondary'] if count == 0 else self.colors['success'],
+        )
+        if HAS_DND and hasattr(self, 'drop_label'):
+            if count == 0:
+                self.drop_label.configure(
+                    text="🎯 Ou arraste PDFs aqui",
+                    text_color=self.colors['text_secondary'],
                 )
             else:
-                self.drop_sub_label.configure(
-                    text=f"Processamento paralelo configurado ({count} arquivos)",
-                    text_color=self.colors['success']
+                self.drop_label.configure(
+                    text="🎯 Arraste mais PDFs aqui",
+                    text_color=self.colors['text_secondary'],
                 )
-        
+
         # Limpa lista atual
         for widget in self.files_list_frame.winfo_children():
             widget.destroy()

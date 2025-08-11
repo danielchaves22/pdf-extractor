@@ -1167,7 +1167,24 @@ class PDFExcelDesktopApp:
             anchor="e"
         )
         self.file_counter_label.pack(side="right")
-        
+
+        # Labels principais para instruções de seleção
+        self.drop_main_label = ctk.CTkLabel(
+            file_frame,
+            text="Nenhum arquivo selecionado",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=self.colors['text_secondary'],
+        )
+        self.drop_main_label.pack(fill="x", padx=20)
+
+        self.drop_sub_label = ctk.CTkLabel(
+            file_frame,
+            text="🎯 Arraste PDFs aqui ou use o botão abaixo",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors['text_secondary'],
+        )
+        self.drop_sub_label.pack(fill="x", padx=20, pady=(0, 8))
+
         # Frame para botões de ação (compacto)
         action_frame = ctk.CTkFrame(file_frame, fg_color="transparent")
         action_frame.pack(fill="x", padx=20, pady=(0, 8))
@@ -1264,11 +1281,15 @@ class PDFExcelDesktopApp:
                 text="🎯 Arraste PDFs aqui ou use o botão abaixo",
                 text_color=self.colors['text_secondary']
             )
+            self.file_counter_label.configure(text="0 arquivos")
         else:
             count = len(self.selected_files)
             self.drop_main_label.configure(
                 text=f"📄 {count} arquivo{'s' if count > 1 else ''} selecionado{'s' if count > 1 else ''}",
                 text_color=self.colors['success']
+            )
+            self.file_counter_label.configure(
+                text=f"{count} arquivo{'s' if count > 1 else ''}"
             )
             if count == 1:
                 self.drop_sub_label.configure(

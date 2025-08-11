@@ -7,7 +7,12 @@ PDF para Excel Desktop App - Interface Gráfica
 Interface gráfica moderna usando CustomTkinter que utiliza o módulo
 pdf_processor_core.py para toda a lógica de processamento.
 
-Versão 3.3 - Com Processamento Paralelo de Múltiplos PDFs - Interface Simplificada
+Versão 3.3.2 - OTIMIZAÇÕES DE INTERFACE:
+- Painel de informações removido para mais espaço
+- Lista de arquivos expandida (altura 220px)
+- Interface compacta e organizada
+- Contador dinâmico no header
+- Melhor aproveitamento do espaço vertical
 
 Funcionalidades v3.3:
 - Seleção múltipla de PDFs com interface simplificada
@@ -377,6 +382,8 @@ class BatchProcessingPopup:
             try:
                 self.window.attributes('-alpha', 1.0)
                 self.window.transient(self.parent.root)
+                self.window.grab_set()  # Torna modal
+                self.window.resizable(False, False)
             except:
                 pass
             
@@ -575,6 +582,7 @@ class BatchProcessingPopup:
         """Fecha o popup"""
         if self.window:
             try:
+                self.window.grab_release()  # Libera modal
                 self.window.destroy()
                 self.window = None
                 
@@ -584,6 +592,356 @@ class BatchProcessingPopup:
             except Exception as e:
                 print(f"Erro ao fechar popup em lote: {e}")
                 self.window = None
+
+class HistoryDetailsWindow:
+    """Janela modal para detalhes do histórico com estilo melhorado"""
+    
+    _instance = None  # Controle de instância única
+    
+    def __init__(self, parent, entry):
+        # Controle de instância única
+        if HistoryDetailsWindow._instance is not None:
+            try:
+                HistoryDetailsWindow._instance.close()
+            except:
+                pass
+        
+        self.parent = parent
+        self.entry = entry
+        self.window = None
+        HistoryDetailsWindow._instance = self
+        
+        self._create_window()
+    
+    def _create_window(self):
+        """Cria a janela de detalhes com estilo melhorado"""
+        try:
+            self.window = ctk.CTkToplevel(self.parent.root)
+            self.window.title("📝 Detalhes do Histórico")
+            self.window.geometry("750x600")
+            
+            # Configurações de janela modal
+            try:
+                self.window.transient(self.parent.root)
+                self.window.grab_set()  # Torna modal
+                self.window.resizable(True, True)
+                self.window.attributes('-alpha', 1.0)
+            except:
+                pass
+            
+            self.window.protocol("WM_DELETE_WINDOW", self.close)
+            
+            # Criar interface
+            self._create_interface()
+            
+            # Posicionamento
+            self._center_window()
+            
+            # Foco
+            try:
+                self.window.focus_force()
+                self.window.lift()
+            except:
+                pass
+                
+        except Exception as e:
+            print(f"Erro ao criar janela de detalhes: {e}")
+            self.window = None
+    
+    def _create_interface(self):
+        """Cria a interface da janela com estilo CustomTkinter"""
+        if not self.window:
+            return
+        
+        # Container principal
+        main_frame = ctk.CTkFrame(self.window)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        
+        # Header com informações principais
+        header_frame = ctk.CTkFrame(main_frame)
+        header_frame.pack(fill="x", padx=15, pady=(15, 10))
+        
+        # Título
+        title_text = f"📄 {Path(self.entry.pdf_file).stem}"
+        if self.entry.is_batch and self.entry.batch_info.get('batch_size', 0) > 1:
+            title_text += f" (Lote de {self.entry.batch_info['batch_size']})"
+        
+        title_label = ctk.CTkLabel(
+            header_frame,
+            text=title_text,
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(15, 5))
+        
+        # Status e timestamp
+        status_color = "#2cc985" if self.entry.success else "#f44336"
+        status_text = "✅ Processamento bem-sucedido" if self.entry.success else "❌ Processamento com erro"
+        
+        status_label = ctk.CTkLabel(
+            header_frame,
+            text=status_text,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=status_color
+        )
+        status_label.pack(pady=(0, 5))
+        
+        timestamp_label = ctk.CTkLabel(
+            header_frame,
+            text=f"🕒 {self.entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}",
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        timestamp_label.pack(pady=(0, 15))
+        
+        # Informações de resultado
+        if self.entry.success and self.entry.result_data:
+            info_frame = ctk.CTkFrame(main_frame)
+            info_frame.pack(fill="x", padx=15, pady=(0, 10))
+            
+            info_title = ctk.CTkLabel(
+                info_frame,
+                text="📊 Informações do Processamento",
+                font=ctk.CTkFont(size=14, weight="bold")
+            )
+            info_title.pack(pady=(15, 10))
+            
+            # Grade de informações
+            info_grid = ctk.CTkFrame(info_frame, fg_color="transparent")
+            info_grid.pack(fill="x", padx=15, pady=(0, 15))
+            
+            info_items = []
+            
+            if self.entry.result_data.get('person_name'):
+                info_items.append(("👤 Pessoa", self.entry.result_data['person_name']))
+            
+            if self.entry.result_data.get('total_extracted') is not None:
+                info_items.append(("📋 Períodos processados", str(self.entry.result_data['total_extracted'])))
+            
+            if self.entry.result_data.get('arquivo_final'):
+                info_items.append(("💾 Arquivo criado", self.entry.result_data['arquivo_final']))
+            
+            if self.entry.result_data.get('folha_normal_periods'):
+                info_items.append(("📄 FOLHA NORMAL", f"{self.entry.result_data['folha_normal_periods']} períodos"))
+            
+            if self.entry.result_data.get('salario_13_periods'):
+                info_items.append(("💰 13º SALÁRIO", f"{self.entry.result_data['salario_13_periods']} períodos"))
+            
+            # Exibe informações em pares
+            for i in range(0, len(info_items), 2):
+                row_frame = ctk.CTkFrame(info_grid, fg_color="transparent")
+                row_frame.pack(fill="x", pady=2)
+                
+                # Item da esquerda
+                left_item = info_items[i]
+                left_frame = ctk.CTkFrame(row_frame)
+                left_frame.pack(side="left", fill="x", expand=True, padx=(0, 5))
+                
+                ctk.CTkLabel(
+                    left_frame,
+                    text=left_item[0],
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    anchor="w"
+                ).pack(fill="x", padx=10, pady=(5, 0))
+                
+                ctk.CTkLabel(
+                    left_frame,
+                    text=left_item[1],
+                    font=ctk.CTkFont(size=11),
+                    anchor="w"
+                ).pack(fill="x", padx=10, pady=(0, 5))
+                
+                # Item da direita (se existir)
+                if i + 1 < len(info_items):
+                    right_item = info_items[i + 1]
+                    right_frame = ctk.CTkFrame(row_frame)
+                    right_frame.pack(side="right", fill="x", expand=True, padx=(5, 0))
+                    
+                    ctk.CTkLabel(
+                        right_frame,
+                        text=right_item[0],
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                        anchor="w"
+                    ).pack(fill="x", padx=10, pady=(5, 0))
+                    
+                    ctk.CTkLabel(
+                        right_frame,
+                        text=right_item[1],
+                        font=ctk.CTkFont(size=11),
+                        anchor="w"
+                    ).pack(fill="x", padx=10, pady=(0, 5))
+        
+        # Área de logs
+        logs_frame = ctk.CTkFrame(main_frame)
+        logs_frame.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        
+        logs_title = ctk.CTkLabel(
+            logs_frame,
+            text="📄 Logs Detalhados",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        logs_title.pack(pady=(15, 10))
+        
+        # Textbox para logs com estilo melhorado
+        self.logs_textbox = ctk.CTkTextbox(
+            logs_frame,
+            wrap="word",
+            font=ctk.CTkFont(family="Consolas", size=11),
+            corner_radius=8
+        )
+        self.logs_textbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        
+        # Popula logs
+        self._populate_logs()
+        
+        # Botões de ação
+        buttons_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        buttons_frame.pack(fill="x", padx=15, pady=(0, 15))
+        
+        # Botão fechar
+        close_button = ctk.CTkButton(
+            buttons_frame,
+            text="✖️ Fechar",
+            command=self.close,
+            width=100,
+            height=35,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color="#dc3545",
+            hover_color="#c82333"
+        )
+        close_button.pack(side="right", padx=(10, 0))
+        
+        # Botão abrir arquivo (apenas para sucessos)
+        if self.entry.success and self.entry.result_data.get('excel_path'):
+            open_button = ctk.CTkButton(
+                buttons_frame,
+                text="📂 Abrir Arquivo",
+                command=self._open_file,
+                width=120,
+                height=35,
+                font=ctk.CTkFont(size=12, weight="bold"),
+                fg_color="#28a745",
+                hover_color="#218838"
+            )
+            open_button.pack(side="right")
+    
+    def _populate_logs(self):
+        """Popula a área de logs com formatação melhorada"""
+        try:
+            # Cabeçalho com informações básicas
+            header_info = [
+                f"📄 Arquivo: {self.entry.pdf_file}",
+                f"🕒 Data/Hora: {self.entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}",
+                f"✅ Resultado: {'Sucesso' if self.entry.success else 'Falha'}",
+                ""
+            ]
+            
+            # Informações específicas
+            if self.entry.success and self.entry.result_data:
+                if self.entry.result_data.get('arquivo_final'):
+                    header_info.append(f"💾 Arquivo Excel: {self.entry.result_data['arquivo_final']}")
+                if self.entry.result_data.get('person_name'):
+                    header_info.append(f"👤 Pessoa: {self.entry.result_data['person_name']}")
+                if self.entry.result_data.get('total_extracted') is not None:
+                    header_info.append(f"📊 Períodos processados: {self.entry.result_data['total_extracted']}")
+                if self.entry.result_data.get('total_pages'):
+                    header_info.append(f"📑 Páginas analisadas: {self.entry.result_data['total_pages']}")
+            else:
+                if self.entry.result_data and self.entry.result_data.get('error'):
+                    header_info.append(f"❌ Erro: {self.entry.result_data['error']}")
+            
+            header_info.extend(["", "📄 Logs Detalhados:", "=" * 50, ""])
+            
+            # Combina header com logs
+            if self.entry.logs:
+                all_lines = header_info + self.entry.logs
+            else:
+                all_lines = header_info + ["Nenhum log detalhado disponível."]
+            
+            # Insere no textbox
+            content = "\n".join(all_lines)
+            self.logs_textbox.insert("1.0", content)
+            self.logs_textbox.configure(state="disabled")
+            
+        except Exception as e:
+            error_text = f"Erro ao carregar logs: {str(e)}"
+            self.logs_textbox.insert("1.0", error_text)
+            self.logs_textbox.configure(state="disabled")
+    
+    def _open_file(self):
+        """Abre o arquivo Excel associado"""
+        try:
+            file_path = self.entry.result_data.get('excel_path')
+            if not file_path and hasattr(self.parent, 'trabalho_dir') and self.parent.trabalho_dir:
+                arquivo_rel = self.entry.result_data.get('arquivo_final')
+                if arquivo_rel:
+                    file_path = Path(self.parent.trabalho_dir) / arquivo_rel
+            
+            if not file_path:
+                messagebox.showerror("Erro", "Caminho do arquivo não disponível.")
+                return
+            
+            file_path = Path(file_path)
+            if not file_path.exists():
+                messagebox.showerror("Erro", f"Arquivo não encontrado: {file_path}")
+                return
+            
+            if sys.platform.startswith('win'):
+                os.startfile(file_path)  # type: ignore[attr-defined]
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', str(file_path)])
+            else:
+                subprocess.Popen(['xdg-open', str(file_path)])
+        
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível abrir o arquivo: {e}")
+    
+    def _center_window(self):
+        """Centraliza a janela em relação à janela principal"""
+        try:
+            # Atualiza geometria
+            self.window.update_idletasks()
+            
+            # Obtém dimensões
+            width = 750
+            height = 600
+            
+            # Obtém posição da janela principal
+            parent_x = self.parent.root.winfo_x()
+            parent_y = self.parent.root.winfo_y()
+            parent_width = self.parent.root.winfo_width()
+            parent_height = self.parent.root.winfo_height()
+            
+            # Calcula posição centralizada
+            x = parent_x + (parent_width - width) // 2
+            y = parent_y + (parent_height - height) // 2
+            
+            # Garante que a janela não saia da tela
+            x = max(0, x)
+            y = max(0, y)
+            
+            self.window.geometry(f"{width}x{height}+{x}+{y}")
+            
+        except Exception:
+            # Fallback para posição padrão
+            self.window.geometry("750x600+200+100")
+    
+    def close(self):
+        """Fecha a janela e limpa referências"""
+        if self.window:
+            try:
+                self.window.grab_release()  # Libera modal
+                self.window.destroy()
+                self.window = None
+                
+                # Foco na janela principal
+                self.parent.root.focus_force()
+                self.parent.root.lift()
+                
+            except Exception as e:
+                print(f"Erro ao fechar janela de detalhes: {e}")
+                self.window = None
+            finally:
+                HistoryDetailsWindow._instance = None
 
 class PDFExcelDesktopApp:
     def __init__(self):
@@ -596,7 +954,7 @@ class PDFExcelDesktopApp:
         else:
             self.root = ctk.CTk()
         
-        self.root.title("Processamento de Folha de Pagamento v3.3")
+        self.root.title("Processamento de Folha de Pagamento v3.3.2")
         self.root.geometry("950x600")
         self.root.resizable(False, False)
         
@@ -766,7 +1124,7 @@ class PDFExcelDesktopApp:
         
         subtitle_label = ctk.CTkLabel(
             header_frame,
-            text="Automatização de folhas de pagamento PDF para Excel v3.3 - Histórico Individual + Processamento Paralelo",
+            text="Automatização de folhas de pagamento PDF para Excel v3.3.2 - Interface Otimizada + Lista Expandida",
             font=ctk.CTkFont(size=11),
             text_color=self.colors['text_secondary']
         )
@@ -784,95 +1142,94 @@ class PDFExcelDesktopApp:
         self.create_multiple_file_section()
 
     def create_multiple_file_section(self):
-        """Cria seção de seleção de arquivos com botão processar integrado"""
+        """Cria seção de seleção de arquivos simplificada com mais espaço para lista"""
         file_frame = ctk.CTkFrame(self.processing_container)
         file_frame.pack(fill="x", pady=(0, 8))
         
-        # Título da seção
+        # Header com título e contador
+        header_frame = ctk.CTkFrame(file_frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=20, pady=(10, 8))
+        
         file_title = ctk.CTkLabel(
-            file_frame,
+            header_frame,
             text="📎 Seleção de Arquivos PDF",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w"
         )
-        file_title.pack(fill="x", padx=20, pady=(10, 8))
+        file_title.pack(side="left")
         
-        # Área de drop
-        self.drop_frame = ctk.CTkFrame(file_frame, height=70)
-        self.drop_frame.pack(fill="x", padx=20, pady=(0, 8))
-        self.drop_frame.pack_propagate(False)
-        
-        # Container interno
-        drop_content = ctk.CTkFrame(self.drop_frame, fg_color="transparent")
-        drop_content.pack(expand=True, fill="both", padx=6, pady=5)
-        
-        # Labels principais
-        self.drop_main_label = ctk.CTkLabel(
-            drop_content,
-            text="Nenhum arquivo selecionado",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            text_color=self.colors['text_secondary']
+        # Contador de arquivos (atualizado dinamicamente)
+        self.file_counter_label = ctk.CTkLabel(
+            header_frame,
+            text="0 arquivos",
+            font=ctk.CTkFont(size=12),
+            text_color=self.colors['text_secondary'],
+            anchor="e"
         )
-        self.drop_main_label.pack(pady=(2, 1))
+        self.file_counter_label.pack(side="right")
         
-        self.drop_sub_label = ctk.CTkLabel(
-            drop_content,
-            text="🎯 Arraste PDFs aqui ou use o botão abaixo",
-            font=ctk.CTkFont(size=11),
-            text_color=self.colors['text_secondary']
-        )
-        self.drop_sub_label.pack(pady=(0, 2))
-        
-        # Frame para botões de ação
+        # Frame para botões de ação (compacto)
         action_frame = ctk.CTkFrame(file_frame, fg_color="transparent")
-        action_frame.pack(fill="x", padx=20, pady=(0, 10))
+        action_frame.pack(fill="x", padx=20, pady=(0, 8))
         
-        # Botão seleção (único, funciona para 1 ou múltiplos)
+        # Botão seleção 
         select_button = ctk.CTkButton(
             action_frame,
             text="📂 Selecionar PDFs",
             command=self.select_pdfs,
             width=160,
-            height=35,
+            height=32,
             font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=self.colors['primary']
         )
-        select_button.pack(side="left", padx=(0, 10))
+        select_button.pack(side="left", padx=(0, 8))
         
         # Botão limpar seleção
         clear_button = ctk.CTkButton(
             action_frame,
             text="🗑️ Limpar",
             command=self.clear_selection,
-            width=80,
-            height=35,
-            font=ctk.CTkFont(size=12),
+            width=70,
+            height=32,
+            font=ctk.CTkFont(size=11),
             fg_color=self.colors['secondary']
         )
-        clear_button.pack(side="left", padx=(0, 15))
+        clear_button.pack(side="left", padx=(0, 20))
         
-        # Botão processar (integrado na mesma linha)
+        # Área de drop compacta (opcional para drag & drop)
+        if HAS_DND:
+            self.drop_frame = ctk.CTkFrame(action_frame, height=32, width=200)
+            self.drop_frame.pack(side="left", padx=(0, 20))
+            self.drop_frame.pack_propagate(False)
+            
+            drop_label = ctk.CTkLabel(
+                self.drop_frame,
+                text="🎯 Ou arraste PDFs aqui",
+                font=ctk.CTkFont(size=11),
+                text_color=self.colors['text_secondary']
+            )
+            drop_label.pack(expand=True)
+            
+            # Bind para clique na área de drop
+            self.drop_frame.bind("<Button-1>", lambda e: self.select_pdfs())
+            drop_label.bind("<Button-1>", lambda e: self.select_pdfs())
+        
+        # Botão processar (mais compacto)
         self.process_button = ctk.CTkButton(
             action_frame,
             text="🚀 Processar PDFs",
             command=self.process_pdfs,
-            width=200,
-            height=35,
-            font=ctk.CTkFont(size=13, weight="bold"),
+            width=180,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
             fg_color=self.colors['success'],
             hover_color="#259b6e"
         )
         self.process_button.pack(side="right")
         
-        # Lista de arquivos selecionados
-        self.files_list_frame = ctk.CTkScrollableFrame(file_frame, height=120)
+        # Lista de arquivos selecionados (MAIS ESPAÇO - altura aumentada)
+        self.files_list_frame = ctk.CTkScrollableFrame(file_frame, height=220)
         self.files_list_frame.pack(fill="x", padx=20, pady=(0, 15))
-        
-        # Bind para clique na área de drop
-        self.drop_frame.bind("<Button-1>", lambda e: self.select_pdfs())
-        drop_content.bind("<Button-1>", lambda e: self.select_pdfs())
-        self.drop_main_label.bind("<Button-1>", lambda e: self.select_pdfs())
-        self.drop_sub_label.bind("<Button-1>", lambda e: self.select_pdfs())
 
     def select_pdfs(self):
         """Seleciona PDFs (um ou múltiplos)"""
@@ -1345,13 +1702,23 @@ class PDFExcelDesktopApp:
         self._monitor_batch_progress()
 
     def _monitor_batch_progress(self):
-        """Monitora progresso do processamento em lote mantendo a janela responsiva"""
+        """
+        Monitora progresso do processamento em lote de forma mais responsiva.
+        Versão 3.3.1 - Melhorada para evitar congelamento da interface.
+        """
+        if not self.batch_processor.is_running and self.batch_processor.status_queue.empty():
+            return
+        
+        # Processa até 5 atualizações por ciclo para manter responsividade
+        updates_processed = 0
+        max_updates_per_cycle = 5
+        
         try:
-            processed = False
-            while True:
+            while updates_processed < max_updates_per_cycle:
                 try:
+                    # Timeout curto para não bloquear interface
                     update_type, filename, status = self.batch_processor.status_queue.get_nowait()
-                    processed = True
+                    updates_processed += 1
 
                     if update_type == 'update' and self.batch_popup and self.batch_popup.window:
                         # Atualiza status individual
@@ -1367,28 +1734,42 @@ class PDFExcelDesktopApp:
                             self.add_log_message(f"✅ {filename}: Concluído")
                         elif status.status == 'error':
                             self.add_log_message(f"❌ {filename}: {status.message}")
+                        elif status.status == 'processing' and status.progress > 0:
+                            # Log menos verboso para progresso
+                            if status.progress % 25 == 0:  # Log a cada 25%
+                                self.add_log_message(f"🔄 {filename}: {status.progress}% - {status.message}")
 
                     elif update_type == 'batch_complete':
                         # Processamento completo
                         self._batch_process_complete()
-                        break
+                        return
 
                 except queue.Empty:
                     break
 
-            # Força atualização da interface para evitar congelamento
-            if processed:
+            # Força atualização da interface mais frequentemente
+            if self.batch_popup and self.batch_popup.window:
                 try:
-                    self.root.update_idletasks()
+                    self.batch_popup.window.update_idletasks()
                 except Exception:
                     pass
+            
+            # Atualiza interface principal também
+            try:
+                self.root.update_idletasks()
+            except Exception:
+                pass
 
-            # Continua monitoramento se ainda processando
-            if self.batch_processor.is_running:
-                self.root.after(100, self._monitor_batch_progress)
+            # Continua monitoramento se ainda processando com intervalo menor
+            if self.batch_processor.is_running or not self.batch_processor.status_queue.empty():
+                # Intervalo reduzido para maior responsividade
+                self.root.after(50, self._monitor_batch_progress)
 
         except Exception as e:
             self.add_log_message(f"Erro no monitoramento: {e}")
+            # Em caso de erro, tenta continuar monitoramento
+            if self.batch_processor.is_running:
+                self.root.after(200, self._monitor_batch_progress)
 
     def _batch_process_complete(self):
         """Callback quando processamento em lote completa"""
@@ -1665,7 +2046,7 @@ class PDFExcelDesktopApp:
             )
             open_data_button.pack(side="right", padx=(5, 0))
         
-        # Botão "Ver Detalhes"
+        # Botão "Ver Detalhes" - CORRIGIDO v3.3.1
         details_button = ctk.CTkButton(
             actions_frame,
             text="📝",
@@ -1717,36 +2098,16 @@ class PDFExcelDesktopApp:
             messagebox.showerror("Erro", f"Não foi possível abrir o arquivo: {e}")
 
     def show_history_details(self, entry):
-        """Mostra detalhes da entrada do histórico"""
-        details_window = ctk.CTkToplevel(self.root)
-        details_window.title("Detalhes do Histórico")
-        details_window.geometry("700x500")
-
-        textbox = ctk.CTkTextbox(details_window, wrap="word")
-        textbox.pack(fill="both", expand=True, padx=10, pady=10)
-
-        lines = [
-            f"PDF: {entry.pdf_file}",
-            f"Data/Hora: {entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}",
-            f"Resultado: {'Sucesso' if entry.success else 'Falha'}",
-        ]
-
-        if entry.success:
-            if entry.result_data.get('arquivo_final'):
-                lines.append(f"Arquivo Excel: {entry.result_data['arquivo_final']}")
-            if entry.result_data.get('person_name'):
-                lines.append(f"Pessoa: {entry.result_data['person_name']}")
-            if entry.result_data.get('total_extracted') is not None:
-                lines.append(f"Períodos processados: {entry.result_data.get('total_extracted', 0)}")
-        else:
-            lines.append(f"Erro: {entry.result_data.get('error', 'Erro desconhecido')}")
-
-        if entry.logs:
-            lines.append("\nLogs:")
-            lines.extend(entry.logs)
-
-        textbox.insert("1.0", "\n".join(lines))
-        textbox.configure(state="disabled")
+        """
+        Mostra detalhes da entrada do histórico.
+        Versão 3.3.1 - CORRIGIDO: Agora usa janela modal com controle de instância única.
+        """
+        try:
+            # Cria janela de detalhes com estilo melhorado e controle modal
+            details_window = HistoryDetailsWindow(self, entry)
+        except Exception as e:
+            # Fallback para messagebox em caso de erro
+            messagebox.showerror("Erro", f"Não foi possível abrir janela de detalhes: {e}")
 
     def add_log_message(self, message):
         """Adiciona mensagem ao log"""
@@ -1761,7 +2122,7 @@ class PDFExcelDesktopApp:
         """Carrega configuração inicial"""
         def task():
             try:
-                self.root.after(0, lambda: self.add_log_message("Sistema iniciado - v3.3 com histórico individual e processamento paralelo"))
+                self.root.after(0, lambda: self.add_log_message("Sistema iniciado - v3.3.2 com interface otimizada e lista expandida"))
                 
                 # Configura status inicial
                 if not self.trabalho_dir:
@@ -1785,6 +2146,20 @@ class PDFExcelDesktopApp:
             )
             if not result:
                 return
+        
+        # Fecha janela de detalhes se estiver aberta
+        if HistoryDetailsWindow._instance:
+            try:
+                HistoryDetailsWindow._instance.close()
+            except:
+                pass
+        
+        # Fecha popup de processamento se estiver aberto
+        if self.batch_popup:
+            try:
+                self.batch_popup.close()
+            except:
+                pass
         
         self.save_current_config()
         self.root.destroy()

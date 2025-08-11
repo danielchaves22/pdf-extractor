@@ -1345,39 +1345,48 @@ class PDFExcelDesktopApp:
         self._monitor_batch_progress()
 
     def _monitor_batch_progress(self):
-        """Monitora progresso do processamento em lote"""
+        """Monitora progresso do processamento em lote mantendo a janela responsiva"""
         try:
+            processed = False
             while True:
                 try:
                     update_type, filename, status = self.batch_processor.status_queue.get_nowait()
-                    
+                    processed = True
+
                     if update_type == 'update' and self.batch_popup and self.batch_popup.window:
                         # Atualiza status individual
                         self.batch_popup.update_pdf_status(filename, status)
-                        
+
                         # Atualiza progresso geral
                         completed = self.batch_processor.completed_count
                         total = self.batch_processor.total_count
                         self.batch_popup.update_general_progress(completed, total)
-                        
+
                         # Log do progresso
                         if status.status == 'completed':
                             self.add_log_message(f"✅ {filename}: Concluído")
                         elif status.status == 'error':
                             self.add_log_message(f"❌ {filename}: {status.message}")
-                    
+
                     elif update_type == 'batch_complete':
                         # Processamento completo
                         self._batch_process_complete()
                         break
-                
+
                 except queue.Empty:
                     break
-            
+
+            # Força atualização da interface para evitar congelamento
+            if processed:
+                try:
+                    self.root.update_idletasks()
+                except Exception:
+                    pass
+
             # Continua monitoramento se ainda processando
             if self.batch_processor.is_running:
                 self.root.after(100, self._monitor_batch_progress)
-                
+
         except Exception as e:
             self.add_log_message(f"Erro no monitoramento: {e}")
 

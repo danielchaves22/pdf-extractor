@@ -14,6 +14,7 @@ Versão 4.0 - MIGRAÇÃO PARA PYQT6:
 - Drag & Drop nativo do PyQt6
 - Interface responsiva e moderna
 - Eliminação de polling manual
+- Splash Screen profissional
 
 Funcionalidades v4.0:
 - Seleção múltipla de PDFs com interface otimizada
@@ -21,6 +22,7 @@ Funcionalidades v4.0:
 - Updates em tempo real sem latência
 - Histórico virtualizado para performance máxima
 - Styling moderno com QSS
+- Splash screen com progresso de carregamento
 
 Dependências:
 pip install PyQt6
@@ -38,6 +40,7 @@ import json
 import uuid
 import subprocess
 import threading
+import time
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,13 +53,14 @@ from PyQt6.QtWidgets import (
     QTabWidget, QLabel, QPushButton, QLineEdit, QTextEdit, QProgressBar,
     QListWidget, QListWidgetItem, QFrame, QDialog, QScrollArea,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QSizePolicy,
-    QSplitter, QGroupBox, QFormLayout, QComboBox
+    QSplitter, QGroupBox, QFormLayout, QComboBox, QSplashScreen
 )
 from PyQt6.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QSize, pyqtSlot, QMimeData
 )
 from PyQt6.QtGui import (
-    QFont, QTextCursor, QPalette, QColor, QDragEnterEvent, QDropEvent, QAction
+    QFont, QTextCursor, QPalette, QColor, QDragEnterEvent, QDropEvent, QAction,
+    QPixmap, QPainter, QLinearGradient
 )
 
 # Importa o processador core
@@ -66,6 +70,140 @@ except ImportError:
     print("ERRO: Módulo pdf_processor_core.py não encontrado!")
     print("Certifique-se de que o arquivo pdf_processor_core.py está na mesma pasta.")
     sys.exit(1)
+
+class SplashScreen(QSplashScreen):
+    """Splash screen moderna com progresso de carregamento"""
+    
+    def __init__(self):
+        # Cria pixmap simples para splash screen
+        splash_pixmap = self.create_splash_pixmap()
+        super().__init__(splash_pixmap)
+        
+        self.setWindowFlags(Qt.WindowType.SplashScreen | Qt.WindowType.WindowStaysOnTopHint)
+        
+        # Define fonte maior e em negrito para as mensagens de progresso
+        progress_font = QFont("Arial", 13, QFont.Weight.Bold)
+        self.setFont(progress_font)
+        
+        # Timer para simular progresso
+        self.progress_value = 0
+        self.progress_timer = QTimer()
+        self.progress_timer.timeout.connect(self.update_progress)
+        
+        # Centraliza na tela
+        self.center_on_screen()
+        
+    def create_splash_pixmap(self):
+        """Cria pixmap customizado para a splash screen"""
+        width, height = 480, 220  # Altura reduzida
+        pixmap = QPixmap(width, height)
+        pixmap.fill(QColor("#1e1e1e"))
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Fundo com gradiente
+        gradient = QLinearGradient(0, 0, 0, height)
+        gradient.setColorAt(0, QColor("#1e1e1e"))
+        gradient.setColorAt(1, QColor("#2b2b2b"))
+        painter.fillRect(pixmap.rect(), gradient)
+        
+        # Borda
+        painter.setPen(QColor("#1f538d"))
+        painter.drawRoundedRect(5, 5, width-10, height-10, 10, 10)
+        
+        # Título principal
+        painter.setPen(QColor("#ffffff"))
+        title_font = QFont("Arial", 22, QFont.Weight.Bold)
+        painter.setFont(title_font)
+        painter.drawText(20, 50, width-40, 40, Qt.AlignmentFlag.AlignCenter, "📄 Processamento de Folha")
+        
+        # Subtítulo (com espaçamento aumentado)
+        subtitle_font = QFont("Arial", 14)
+        painter.setFont(subtitle_font)
+        painter.setPen(QColor("#aaaaaa"))
+        painter.drawText(20, 100, width-40, 25, Qt.AlignmentFlag.AlignCenter, "Sistema de Automatização v4.0")
+        
+        painter.end()
+        return pixmap
+    
+    def center_on_screen(self):
+        """Centraliza splash screen na tela"""
+        try:
+            screen = QApplication.primaryScreen().geometry()
+            splash_size = self.size()
+            x = (screen.width() - splash_size.width()) // 2
+            y = (screen.height() - splash_size.height()) // 2
+            self.move(x, y)
+        except Exception:
+            # Fallback se não conseguir centralizar
+            self.move(400, 300)
+    
+    def start_loading(self):
+        """Inicia processo de carregamento simulado"""
+        self.progress_value = 0
+        self.progress_timer.start(30)  # Atualiza a cada 30ms para animação mais suave
+        self.show()
+        self.showMessage("Inicializando aplicação...", Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, QColor("#ffffff"))
+        QApplication.processEvents()  # Força renderização
+    
+    def update_progress(self):
+        """Atualiza progresso da splash screen"""
+        if self.progress_value < 100:
+            # Incremento variável para parecer mais natural
+            if self.progress_value < 30:
+                self.progress_value += 1.5  # Início mais rápido
+            elif self.progress_value < 70:
+                self.progress_value += 1    # Meio mais lento
+            else:
+                self.progress_value += 0.8  # Final mais lento
+                
+            current_progress = int(self.progress_value)
+            
+            # Atualiza mensagem baseado no progresso
+            if self.progress_value < 15:
+                message = f"{current_progress}% - Inicializando PyQt6..."
+            elif self.progress_value < 30:
+                message = f"{current_progress}% - Carregando dependências..."
+            elif self.progress_value < 50:
+                message = f"{current_progress}% - Configurando interface..."
+            elif self.progress_value < 70:
+                message = f"{current_progress}% - Preparando sistema..."
+            elif self.progress_value < 85:
+                message = f"{current_progress}% - Finalizando..."
+            elif self.progress_value < 95:
+                message = f"{current_progress}% - Quase pronto..."
+            else:
+                message = f"{current_progress}% - Carregando..."
+                
+            self.showMessage(message, Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, QColor("#ffffff"))
+        else:
+            self.progress_timer.stop()
+            self.showMessage("100% - Aplicação pronta!", Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, QColor("#2cc985"))
+    
+    def set_status(self, message):
+        """Define status personalizado"""
+        current_val = int(self.progress_value)
+        if "✅" in message:
+            display_message = f"{current_val}% - {message}"
+            color = QColor("#2cc985")
+        elif "❌" in message:
+            display_message = f"{current_val}% - {message}"
+            color = QColor("#f44336")
+        else:
+            display_message = f"{current_val}% - {message}"
+            color = QColor("#ffffff")
+            
+        self.showMessage(display_message, Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, color)
+        QApplication.processEvents()  # Força atualização imediata
+    
+    def finish_loading(self, main_window):
+        """Finaliza carregamento e mostra janela principal"""
+        self.showMessage("100% - Aplicação pronta! Abrindo...", Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, QColor("#2cc985"))
+        QApplication.processEvents()
+        
+        # Pequena pausa para mostrar "100%" e mensagem final
+        QTimer.singleShot(500, lambda: self.finish(main_window))
 
 # Estilo escuro moderno
 DARK_STYLE = """
@@ -566,38 +704,33 @@ class BatchProgressDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Processando {len(pdf_files)} PDFs...")
         self.setModal(True)
-        self.setFixedSize(850, 600)  # Largura ligeiramente maior
+        
+        # Define tamanho fixo e desabilita redimensionamento/maximizar
+        self.setFixedSize(850, 580)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog | 
+            Qt.WindowType.WindowCloseButtonHint
+        )
+        
         self.pdf_widgets = {}
         
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(12)
         
         # Header
-        header = QLabel(f"🔄 Processando {len(pdf_files)} PDFs em Paralelo")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setStyleSheet("font-size: 16px; font-weight: bold; padding: 10px;")
-        layout.addWidget(header)
+        self.header = QLabel(f"🔄 Processando {len(pdf_files)} PDFs em Paralelo")
+        self.header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.header.setStyleSheet("font-size: 16px; font-weight: bold; padding: 15px;")
+        layout.addWidget(self.header)
         
-        # Progresso geral
-        general_group = QGroupBox("📊 Progresso Geral")
-        general_layout = QVBoxLayout(general_group)
+        # Status informativo
+        status_info = QLabel("Acompanhe o progresso individual de cada arquivo abaixo:")
+        status_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_info.setStyleSheet("font-size: 12px; color: #888; padding-bottom: 10px;")
+        layout.addWidget(status_info)
         
-        self.main_progress = QProgressBar()
-        self.main_progress.setMinimum(0)
-        self.main_progress.setMaximum(len(pdf_files))
-        self.main_progress.setValue(0)
-        self.main_progress.setFixedHeight(25)
-        
-        self.main_status = QLabel("Iniciando processamento...")
-        self.main_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.main_status.setFixedHeight(20)
-        
-        general_layout.addWidget(self.main_progress)
-        general_layout.addWidget(self.main_status)
-        layout.addWidget(general_group)
-        
-        # Lista de PDFs
-        pdfs_group = QGroupBox("📝 Status Individual dos PDFs")
+        # Lista de PDFs (sem progresso geral)
+        pdfs_group = QGroupBox("📋 Status de Processamento dos Arquivos PDF")
         pdfs_layout = QVBoxLayout(pdfs_group)
         
         # Scroll area para PDFs
@@ -626,7 +759,7 @@ class BatchProgressDialog(QDialog):
         self.close_button = QPushButton("Fechar")
         self.close_button.setEnabled(False)
         self.close_button.clicked.connect(self.accept)
-        self.close_button.setFixedHeight(30)
+        self.close_button.setFixedHeight(35)
         layout.addWidget(self.close_button)
     
     def _create_pdf_frame(self, filename):
@@ -729,9 +862,11 @@ class BatchProgressDialog(QDialog):
     @pyqtSlot()
     def handle_batch_completed(self):
         """Habilita botão fechar quando processamento termina"""
-        self.main_progress.setValue(self.main_progress.maximum())
-        self.main_status.setText("✅ Processamento concluído!")
-        self.main_status.setStyleSheet("color: #2cc985; font-weight: bold;")
+        # Atualiza header para mostrar conclusão
+        total_pdfs = len(self.pdf_widgets)
+        self.header.setText(f"✅ Processamento Concluído - {total_pdfs} PDFs")
+        self.header.setStyleSheet("font-size: 16px; font-weight: bold; padding: 15px; color: #2cc985;")
+        
         self.close_button.setEnabled(True)
         self.close_button.setText("✅ Fechar")
         self.close_button.setStyleSheet("""
@@ -866,7 +1001,13 @@ class HistoryDetailsDialog(QDialog):
         self.entry = entry
         self.setWindowTitle("📝 Detalhes do Histórico")
         self.setModal(True)
-        self.resize(750, 600)
+        
+        # Define tamanho fixo e desabilita redimensionamento/maximizar  
+        self.setFixedSize(750, 600)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog | 
+            Qt.WindowType.WindowCloseButtonHint
+        )
         
         layout = QVBoxLayout(self)
         
@@ -998,12 +1139,12 @@ class HistoryDetailsDialog(QDialog):
                     file_path = Path.cwd() / arquivo_rel
             
             if not file_path:
-                QMessageBox.warning(self, "Erro", "Caminho do arquivo não disponível.")
+                QMessageBox.warning(self, "Arquivo Não Encontrado", "Caminho do arquivo não está disponível.")
                 return
             
             file_path = Path(file_path)
             if not file_path.exists():
-                QMessageBox.warning(self, "Erro", f"Arquivo não encontrado: {file_path}")
+                QMessageBox.warning(self, "Arquivo Não Encontrado", f"O arquivo não foi encontrado:\n\n{file_path}")
                 return
             
             if sys.platform.startswith('win'):
@@ -1014,7 +1155,7 @@ class HistoryDetailsDialog(QDialog):
                 subprocess.Popen(['xdg-open', str(file_path)])
         
         except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Não foi possível abrir o arquivo: {e}")
+            QMessageBox.critical(self, "Erro ao Abrir Arquivo", f"Não foi possível abrir o arquivo:\n\n{e}")
 
 class MainWindow(QMainWindow):
     """Janela principal da aplicação"""
@@ -1022,7 +1163,14 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Processamento de Folha de Pagamento v4.0 - PyQt6")
-        self.setGeometry(100, 100, 950, 600)
+        
+        # Define tamanho fixo e desabilita redimensionamento/maximizar
+        self.setFixedSize(950, 600)
+        self.setWindowFlags(
+            Qt.WindowType.Window | 
+            Qt.WindowType.WindowCloseButtonHint | 
+            Qt.WindowType.WindowMinimizeButtonHint
+        )
         
         # Estado da aplicação - INICIALIZAR PRIMEIRO
         self.selected_files = []
@@ -1051,8 +1199,8 @@ class MainWindow(QMainWindow):
         # Cria interface (depois de inicializar todas as variáveis)
         self.create_interface()
         
-        # Carrega dados persistidos
-        self.load_persisted_data()
+        # Timer para carregar dados persistidos após interface pronta
+        QTimer.singleShot(100, self.load_persisted_data)
     
     def create_interface(self):
         """Cria interface principal"""
@@ -1329,7 +1477,7 @@ class MainWindow(QMainWindow):
     def select_pdfs(self):
         """Seleciona arquivos PDF"""
         if not self.trabalho_dir:
-            QMessageBox.warning(self, "Aviso", "Configure o diretório de trabalho primeiro.")
+            QMessageBox.warning(self, "Configuração Necessária", "Configure o diretório de trabalho primeiro.")
             return
         
         files, _ = QFileDialog.getOpenFileNames(
@@ -1430,11 +1578,11 @@ class MainWindow(QMainWindow):
             return
         
         if not self.trabalho_dir:
-            QMessageBox.critical(self, "Erro", "Configure o diretório de trabalho primeiro.")
+            QMessageBox.critical(self, "Configuração Incompleta", "Configure o diretório de trabalho primeiro.")
             return
         
         if not self.selected_files:
-            QMessageBox.critical(self, "Erro", "Selecione pelo menos um arquivo PDF.")
+            QMessageBox.critical(self, "Nenhum Arquivo Selecionado", "Selecione pelo menos um arquivo PDF para processar.")
             return
         
         self.processing = True
@@ -1486,20 +1634,6 @@ class MainWindow(QMainWindow):
         
         self.processing_history.append(entry)
         self.persistence.save_history_entry(entry)
-        
-        # Atualiza progresso geral se há dialog de progresso
-        if self.progress_dialog and hasattr(self.progress_dialog, 'main_progress'):
-            completed_count = len([h for h in self.processing_history[-len(self.selected_files):] 
-                                 if h.timestamp.date() == datetime.now().date()])
-            self.progress_dialog.main_progress.setValue(completed_count)
-            
-            success_count = len([h for h in self.processing_history[-len(self.selected_files):] 
-                               if h.success and h.timestamp.date() == datetime.now().date()])
-            
-            if completed_count < len(self.selected_files):
-                self.progress_dialog.main_status.setText(
-                    f"Processando... {completed_count}/{len(self.selected_files)} concluídos ({success_count} sucessos)"
-                )
     
     @pyqtSlot()
     def handle_batch_completed(self):
@@ -1510,7 +1644,7 @@ class MainWindow(QMainWindow):
         
         # Fecha dialog de progresso se existir
         if self.progress_dialog:
-            # Deixa o dialog aberto para o usuário ver o resultado
+            # Dialog será fechado automaticamente quando usuário clicar no botão
             pass
         
         # Atualiza histórico
@@ -1524,23 +1658,26 @@ class MainWindow(QMainWindow):
         if successful == total:
             QMessageBox.information(
                 self,
-                "Processamento Concluído",
-                f"✅ Todos os {total} PDFs foram processados com sucesso!\n\n"
-                f"📊 Cada arquivo foi adicionado ao histórico."
+                "✅ Processamento Concluído",
+                f"Todos os {total} PDFs foram processados com sucesso!\n\n"
+                f"📊 Verifique o histórico para mais detalhes.\n"
+                f"📂 Os arquivos foram salvos na pasta DADOS/"
             )
         elif successful > 0:
             QMessageBox.warning(
                 self,
-                "Processamento Parcial",
-                f"⚠️ {successful}/{total} PDFs processados com sucesso.\n\n"
-                f"📊 Verifique o histórico para mais detalhes."
+                "⚠️ Processamento Parcial",
+                f"{successful} de {total} PDFs foram processados com sucesso.\n\n"
+                f"📊 Verifique o histórico para detalhes dos arquivos que falharam.\n"
+                f"📂 Os arquivos processados foram salvos na pasta DADOS/"
             )
         else:
             QMessageBox.critical(
                 self,
-                "Processamento Falhou",
-                f"❌ Nenhum PDF foi processado com sucesso.\n\n"
-                f"📊 Verifique o histórico para detalhes dos erros."
+                "❌ Processamento Falhou",
+                f"Nenhum PDF foi processado com sucesso.\n\n"
+                f"📊 Verifique o histórico para detalhes dos erros.\n"
+                f"🔧 Certifique-se de que os PDFs estão no formato correto."
             )
         
         # Limpa seleção e vai para histórico
@@ -1598,12 +1735,12 @@ class MainWindow(QMainWindow):
                     file_path = Path(self.trabalho_dir) / arquivo_rel
             
             if not file_path:
-                QMessageBox.warning(self, "Erro", "Caminho do arquivo não disponível.")
+                QMessageBox.warning(self, "Arquivo Não Encontrado", "Caminho do arquivo não está disponível.")
                 return
             
             file_path = Path(file_path)
             if not file_path.exists():
-                QMessageBox.warning(self, "Erro", f"Arquivo não encontrado: {file_path}")
+                QMessageBox.warning(self, "Arquivo Não Encontrado", f"O arquivo não foi encontrado:\n\n{file_path}")
                 return
             
             if sys.platform.startswith('win'):
@@ -1614,7 +1751,7 @@ class MainWindow(QMainWindow):
                 subprocess.Popen(['xdg-open', str(file_path)])
         
         except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Não foi possível abrir o arquivo: {e}")
+            QMessageBox.critical(self, "Erro ao Abrir Arquivo", f"Não foi possível abrir o arquivo:\n\n{e}")
     
     def clear_history(self):
         """Limpa histórico"""
@@ -1623,15 +1760,26 @@ class MainWindow(QMainWindow):
         
         reply = QMessageBox.question(
             self, 
-            "Confirmar", 
-            "Deseja limpar todo o histórico?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            "Confirmar Limpeza", 
+            "Deseja limpar todo o histórico de processamentos?\n\nEsta ação não pode ser desfeita.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No  # Botão padrão
         )
         
-        if reply == QMessageBox.StandardButton.Yes:
+        # Personaliza texto dos botões
+        button_yes = reply == QMessageBox.StandardButton.Yes
+        
+        if button_yes:
             self.processing_history.clear()
             self.persistence.clear_history()
             self.update_history_display()
+            
+            # Mostra confirmação de sucesso
+            QMessageBox.information(
+                self,
+                "Histórico Limpo",
+                "✅ O histórico foi limpo com sucesso!"
+            )
     
     def _on_threads_changed(self, value):
         """Callback quando número de threads muda"""
@@ -1659,6 +1807,8 @@ class MainWindow(QMainWindow):
     def load_persisted_data(self):
         """Carrega dados persistidos"""
         try:
+            self.add_log_message("Carregando configurações e histórico...")
+            
             config = self.persistence.load_config()
             
             if config.get('trabalho_dir'):
@@ -1681,10 +1831,10 @@ class MainWindow(QMainWindow):
             self.processing_history = self.persistence.load_all_history_entries()
             self.update_history_display()
             
-            self.add_log_message("Configurações e histórico carregados")
+            self.add_log_message(f"✅ Dados carregados: {len(self.processing_history)} entradas no histórico")
             
         except Exception as e:
-            self.add_log_message(f"Erro ao carregar dados persistidos: {e}")
+            self.add_log_message(f"⚠️ Erro ao carregar dados persistidos: {e}")
     
     def add_log_message(self, message):
         """Adiciona mensagem ao log"""
@@ -1705,9 +1855,10 @@ class MainWindow(QMainWindow):
         if self.processing:
             reply = QMessageBox.question(
                 self,
-                "Processamento em andamento",
-                "Há processamentos em andamento. Deseja realmente fechar?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                "Processamento em Andamento",
+                "Há processamentos em andamento. Deseja realmente fechar a aplicação?\n\nO processamento será interrompido.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No  # Botão padrão
             )
             
             if reply == QMessageBox.StandardButton.No:
@@ -1718,17 +1869,129 @@ class MainWindow(QMainWindow):
         event.accept()
 
 def main():
-    """Função principal"""
-    app = QApplication(sys.argv)
-    
-    # Aplica estilo escuro
-    app.setStyleSheet(DARK_STYLE)
-    
-    # Cria e mostra janela principal
-    window = MainWindow()
-    window.show()
-    
-    sys.exit(app.exec())
+    """Função principal com splash screen"""
+    try:
+        app = QApplication(sys.argv)
+        
+        # Aplica estilo escuro
+        app.setStyleSheet(DARK_STYLE)
+        
+        # Cria e mostra splash screen
+        splash = SplashScreen()
+        splash.start_loading()
+        
+        # Permite que splash screen seja mostrada
+        app.processEvents()
+        
+        # Detecção do ambiente (executável vs desenvolvimento)
+        is_frozen = getattr(sys, 'frozen', False)
+        
+        if is_frozen:
+            # Em executável, carregamento pode ser mais lento
+            splash.set_status("Inicializando executável...")
+            time.sleep(0.4)
+        else:
+            # Em desenvolvimento
+            splash.set_status("Modo desenvolvimento...")
+            time.sleep(0.2)
+        
+        # Simula carregamento das dependências principais
+        splash.set_status("Carregando processador...")
+        app.processEvents()
+        time.sleep(0.3 if is_frozen else 0.2)
+        
+        # Verifica importações críticas
+        splash.set_status("Verificando dependências...")
+        app.processEvents()
+        time.sleep(0.2)
+        
+        try:
+            # Testa se consegue importar o processador
+            from pdf_processor_core import PDFProcessorCore
+            splash.set_status("✅ Dependências OK")
+            app.processEvents()
+            time.sleep(0.2)
+        except ImportError as e:
+            splash.set_status("❌ Erro crítico")
+            app.processEvents()
+            time.sleep(1)
+            splash.close()
+            QMessageBox.critical(None, "Erro Crítico de Dependência", 
+                               f"❌ Não foi possível carregar o módulo principal:\n\n"
+                               f"📄 Arquivo: pdf_processor_core.py\n"
+                               f"❓ Status: Não encontrado\n\n"
+                               f"🔧 Solução:\n"
+                               f"Certifique-se de que todos os arquivos estão na mesma pasta do executável.\n\n"
+                               f"📋 Erro técnico: {e}")
+            sys.exit(1)
+        
+        # Carregamento da interface principal
+        splash.set_status("Criando interface...")
+        app.processEvents()
+        time.sleep(0.3 if is_frozen else 0.2)
+        
+        # Cria janela principal
+        splash.set_status("Inicializando PyQt6...")
+        app.processEvents()
+        
+        # Cria window
+        window = MainWindow()
+        
+        splash.set_status("Configurando sistema...")
+        app.processEvents()
+        time.sleep(0.2 if is_frozen else 0.1)
+        
+        splash.set_status("Preparando interface...")
+        app.processEvents()
+        time.sleep(0.2)
+        
+        # Aguarda até splash screen chegar a pelo menos 80%
+        while splash.progress_value < 80:
+            app.processEvents()
+            time.sleep(0.02)
+        
+        splash.set_status("Carregando dados...")
+        app.processEvents()
+        time.sleep(0.2 if is_frozen else 0.1)
+        
+        # Aguarda carregamento completo
+        while splash.progress_value < 100:
+            app.processEvents()
+            time.sleep(0.02)
+        
+        # Finaliza splash e mostra janela principal
+        splash.set_status("✅ Pronto! Abrindo...")
+        app.processEvents()
+        time.sleep(0.3)
+        
+        # Fecha splash e mostra janela principal
+        splash.finish_loading(window)
+        window.show()
+        
+        # Adiciona logs de inicialização bem-sucedida
+        window.add_log_message("🚀 Aplicação PyQt6 v4.0 iniciada com sucesso!")
+        window.add_log_message("💡 Interface moderna com performance nativa carregada")
+        if is_frozen:
+            window.add_log_message("📦 Executando em modo executável (.exe)")
+        else:
+            window.add_log_message("🛠️ Executando em modo desenvolvimento")
+        
+        sys.exit(app.exec())
+        
+    except Exception as e:
+        # Tratamento de erro crítico
+        try:
+            if 'splash' in locals():
+                splash.close()
+            QMessageBox.critical(None, "Erro Crítico na Inicialização", 
+                               f"❌ Erro inesperado ao iniciar a aplicação:\n\n"
+                               f"📋 Detalhes do erro:\n{e}\n\n"
+                               f"🔧 A aplicação será fechada.\n\n"
+                               f"💡 Tente executar novamente ou verifique se todos os arquivos estão presentes.")
+        except:
+            pass  # Se nem QMessageBox funcionar, apenas termina
+        
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

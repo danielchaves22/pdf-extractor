@@ -66,8 +66,10 @@ Aplicação Python para extrair dados de PDFs de folha de pagamento e preencher 
 | Código PDF | Descrição | Excel Coluna | Status | Observações |
 |------------|-----------|--------------|--------|-------------|
 | `01003601` | PREMIO PROD. MENSAL | **X** (PRODUÇÃO) | ✅ | ⚡ **FALLBACK**: Se ÍNDICE vazio, usar VALOR |
+| `01003602` | PREMIO PROD. MENSAL | **X** (PRODUÇÃO) | ✅ | ⚡ **FALLBACK**: Se ÍNDICE vazio, usar VALOR |
 | `01017101` | PREMIO PRO. (R) | **X** (PRODUÇÃO) | ✅ | ⚡ **FALLBACK**: Se ÍNDICE vazio, usar VALOR |
 | `01007301` | HORAS EXT.100%-180 | **Y** (INDICE HE 100%) | ✅ | 🕐 Suporta formato horas |
+| `01007302` | HORAS EXT.100%-180 | **Y** (INDICE HE 100%) | ✅ | 🕐 Suporta formato horas |
 | `01009001` | ADIC.NOT.25%-180 | **AE** (INDICE ADC. NOT.) | ✅ | 🕐 Suporta formato horas |
 | `01022001` | ADICIONAL NOTURNO 25% (R) | **AE** (INDICE ADC. NOT.) | ✅ | 🕐 Suporta formato horas |
 | `01003501` | HORAS EXT.75%-180 | **AA** (INDICE HE 75%) | ✅ | 🕐 Suporta formato horas |

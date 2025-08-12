@@ -185,20 +185,21 @@ QListWidget {
     background-color: #2b2b2b;
     border: 1px solid #444;
     border-radius: 4px;
-    alternate-background-color: #333;
+    outline: none;
 }
 
 QListWidget::item {
-    padding: 4px;
-    border-bottom: 1px solid #333;
+    padding: 0px;
+    border-bottom: 1px solid #444;
+    background-color: transparent;
 }
 
 QListWidget::item:selected {
-    background-color: #1f538d;
+    background-color: transparent;
 }
 
 QListWidget::item:hover {
-    background-color: #3a3a3a;
+    background-color: #333;
 }
 
 QFrame {
@@ -759,54 +760,33 @@ class HistoryItemWidget(QWidget):
         self.entry = entry
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 5, 10, 5)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(12)
         
-        # Ícone de status com cores
-        if entry.is_batch and entry.batch_info.get('processed_in_batch'):
-            icon_text = "📦"
-            if entry.success:
-                status_color = "#2cc985"
-                status_symbol = "✅"
-            else:
-                status_color = "#f44336"
-                status_symbol = "❌"
+        # Ícone de status simples (apenas sucesso ou erro)
+        if entry.success:
+            status_icon = "✅"
+            status_color = "#2cc985"
         else:
-            icon_text = "📄"
-            if entry.success:
-                status_color = "#2cc985"
-                status_symbol = "✅"
-            else:
-                status_color = "#f44336"
-                status_symbol = "❌"
+            status_icon = "❌"
+            status_color = "#f44336"
         
-        status_frame = QFrame()
-        status_frame.setFixedSize(50, 40)
-        status_layout = QVBoxLayout(status_frame)
-        status_layout.setContentsMargins(2, 2, 2, 2)
-        status_layout.setSpacing(0)
-        
-        icon_label = QLabel(icon_text)
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet("font-size: 14px;")
-        
-        status_label = QLabel(status_symbol)
+        status_label = QLabel(status_icon)
+        status_label.setStyleSheet(f"font-size: 18px; color: {status_color};")
+        status_label.setFixedSize(24, 24)
         status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        status_label.setStyleSheet(f"font-size: 12px; color: {status_color}; font-weight: bold;")
-        
-        status_layout.addWidget(icon_label)
-        status_layout.addWidget(status_label)
         
         # Informações principais
         info_layout = QVBoxLayout()
-        info_layout.setSpacing(2)
+        info_layout.setSpacing(3)
         
         # Nome do arquivo
         if entry.success and entry.result_data.get('arquivo_final'):
-            display_name = f"📄 {Path(entry.result_data['arquivo_final']).stem}"
+            display_name = Path(entry.result_data['arquivo_final']).stem
         else:
-            display_name = f"📄 {Path(entry.pdf_file).stem}"
+            display_name = Path(entry.pdf_file).stem
         
+        # Indicador de lote apenas no texto se necessário
         if entry.is_batch and entry.batch_info.get('batch_size', 0) > 1:
             display_name += f" (lote de {entry.batch_info['batch_size']} PDFs)"
         
@@ -815,8 +795,8 @@ class HistoryItemWidget(QWidget):
             display_name = display_name[:57] + "..."
         
         name_label = QLabel(display_name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 12px;")
-        name_label.setToolTip(display_name)  # Tooltip com nome completo
+        name_label.setStyleSheet("font-weight: bold; font-size: 13px; color: white;")
+        name_label.setToolTip(display_name)
         
         # Resultado e timestamp
         if entry.success:
@@ -835,7 +815,7 @@ class HistoryItemWidget(QWidget):
         result_text += f" • {entry.timestamp.strftime('%d/%m/%Y %H:%M')}"
         
         result_label = QLabel(result_text)
-        result_label.setStyleSheet("font-size: 10px; color: #888;")
+        result_label.setStyleSheet("font-size: 11px; color: #aaa;")
         result_label.setToolTip(f"Processado em: {entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}")
         
         info_layout.addWidget(name_label)
@@ -843,19 +823,15 @@ class HistoryItemWidget(QWidget):
         
         # Botões de ação
         buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(4)
+        buttons_layout.setSpacing(6)
         
         if entry.success:
             open_btn = QPushButton("📂")
-            open_btn.setFixedSize(28, 24)
-            open_btn.setToolTip("Abrir arquivo")
+            open_btn.setToolTip("Abrir arquivo Excel")
             open_btn.setStyleSheet("""
                 QPushButton {
-                    background-color: #2cc985;
+                    background-color: transparent;
                     border: none;
-                    border-radius: 4px;
-                    color: white;
-                    font-size: 10px;
                 }
                 QPushButton:hover {
                     background-color: #259b6e;
@@ -865,15 +841,11 @@ class HistoryItemWidget(QWidget):
             buttons_layout.addWidget(open_btn)
         
         details_btn = QPushButton("📝")
-        details_btn.setFixedSize(28, 24)
-        details_btn.setToolTip("Ver detalhes")
+        details_btn.setToolTip("Ver logs detalhados")
         details_btn.setStyleSheet("""
             QPushButton {
-                background-color: #1f538d;
+                background-color: transparent;
                 border: none;
-                border-radius: 4px;
-                color: white;
-                font-size: 10px;
             }
             QPushButton:hover {
                 background-color: #2a5f9e;
@@ -882,7 +854,7 @@ class HistoryItemWidget(QWidget):
         details_btn.clicked.connect(lambda: self.details_requested.emit(self.entry))
         buttons_layout.addWidget(details_btn)
         
-        layout.addWidget(status_frame)
+        layout.addWidget(status_label)
         layout.addLayout(info_layout, 1)
         layout.addLayout(buttons_layout)
 
@@ -1199,6 +1171,20 @@ class MainWindow(QMainWindow):
         # Lista de arquivos
         self.files_list = QListWidget()
         self.files_list.setMaximumHeight(200)
+        self.files_list.setStyleSheet("""
+            QListWidget {
+                background-color: #2b2b2b;
+                border: 1px solid #444;
+                border-radius: 4px;
+            }
+            QListWidget::item {
+                border-bottom: 1px solid #444;
+                padding: 2px;
+            }
+            QListWidget::item:hover {
+                background-color: #333;
+            }
+        """)
         files_layout.addWidget(self.files_list)
         
         layout.addWidget(files_group)
@@ -1232,7 +1218,6 @@ class MainWindow(QMainWindow):
         
         # Lista de histórico (virtualizada automaticamente pelo QListWidget)
         self.history_list = QListWidget()
-        self.history_list.setAlternatingRowColors(True)
         layout.addWidget(self.history_list)
         
         self.tab_widget.addTab(history_widget, "📊 Histórico")
@@ -1378,12 +1363,44 @@ class MainWindow(QMainWindow):
         else:
             self.file_counter_label.setStyleSheet("color: #888;")
         
-        # Atualiza lista
+        # Atualiza lista com botões de remoção
         self.files_list.clear()
         for i, file_path in enumerate(self.selected_files):
             filename = Path(file_path).name
-            item_text = f"{i+1}. {filename}"
-            self.files_list.addItem(item_text)
+            
+            # Cria widget personalizado para cada item
+            item_widget = QWidget()
+            item_layout = QHBoxLayout(item_widget)
+            item_layout.setContentsMargins(5, 2, 5, 2)
+            
+            # Label com o arquivo
+            file_label = QLabel(f"{i+1}. {filename}")
+            file_label.setStyleSheet("color: white; font-size: 11px;")
+            file_label.setToolTip(file_path)
+            
+            # Botão de remoção
+            remove_btn = QPushButton("🗑️")
+            item_layout.setContentsMargins(0, 0, 0,0)
+            remove_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: transparent;
+                    border: none;
+                }
+                QPushButton:hover {
+                    background-color: #c82333;
+                }
+            """)
+            remove_btn.setToolTip("Remover arquivo")
+            remove_btn.clicked.connect(lambda checked, idx=i: self.remove_file_at_index(idx))
+            
+            item_layout.addWidget(file_label, 1)
+            item_layout.addWidget(remove_btn)
+            
+            # Adiciona item à lista
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(QSize(0, 25))
+            self.files_list.addItem(list_item)
+            self.files_list.setItemWidget(list_item, item_widget)
         
         self._update_process_button()
         
@@ -1391,6 +1408,14 @@ class MainWindow(QMainWindow):
         if self.selected_files:
             filenames = [Path(f).name for f in self.selected_files]
             self.add_log_message(f"Arquivos selecionados: {', '.join(filenames)}")
+    
+    def remove_file_at_index(self, index):
+        """Remove arquivo no índice especificado"""
+        if 0 <= index < len(self.selected_files):
+            removed_file = self.selected_files.pop(index)
+            filename = Path(removed_file).name
+            self.add_log_message(f"Arquivo removido: {filename}")
+            self.update_selected_files_display()
     
     def _update_process_button(self):
         """Atualiza estado do botão processar"""
@@ -1537,7 +1562,7 @@ class MainWindow(QMainWindow):
             item_widget.details_requested.connect(self.show_history_details)
             item_widget.file_open_requested.connect(self.open_data_file)
             
-            item.setSizeHint(QSize(0, 65))  # Altura fixa ligeiramente maior para melhor legibilidade
+            item.setSizeHint(QSize(0, 55))  # Altura compacta
             self.history_list.addItem(item)
             self.history_list.setItemWidget(item, item_widget)
         

@@ -207,6 +207,10 @@ QFrame {
     border-radius: 6px;
 }
 
+QFrame:hover {
+    border-color: #1f538d;
+}
+
 QGroupBox {
     background-color: #2b2b2b;
     border: 1px solid #444;
@@ -561,10 +565,11 @@ class BatchProgressDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Processando {len(pdf_files)} PDFs...")
         self.setModal(True)
-        self.setFixedSize(800, 600)
+        self.setFixedSize(850, 600)  # Largura ligeiramente maior
         self.pdf_widgets = {}
         
         layout = QVBoxLayout(self)
+        layout.setSpacing(8)
         
         # Header
         header = QLabel(f"🔄 Processando {len(pdf_files)} PDFs em Paralelo")
@@ -580,9 +585,11 @@ class BatchProgressDialog(QDialog):
         self.main_progress.setMinimum(0)
         self.main_progress.setMaximum(len(pdf_files))
         self.main_progress.setValue(0)
+        self.main_progress.setFixedHeight(25)
         
         self.main_status = QLabel("Iniciando processamento...")
         self.main_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.main_status.setFixedHeight(20)
         
         general_layout.addWidget(self.main_progress)
         general_layout.addWidget(self.main_status)
@@ -596,9 +603,11 @@ class BatchProgressDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
+        scroll_layout.setSpacing(4)
         
         # Cria widgets para cada PDF
         for pdf_file in pdf_files:
@@ -616,38 +625,65 @@ class BatchProgressDialog(QDialog):
         self.close_button = QPushButton("Fechar")
         self.close_button.setEnabled(False)
         self.close_button.clicked.connect(self.accept)
+        self.close_button.setFixedHeight(30)
         layout.addWidget(self.close_button)
     
     def _create_pdf_frame(self, filename):
         """Cria frame para um PDF individual"""
         frame = QFrame()
         frame.setFrameStyle(QFrame.Shape.StyledPanel)
+        frame.setFixedHeight(50)  # Altura fixa para evitar oscilações
         
         layout = QHBoxLayout(frame)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
         
         # Ícone de status
         icon = QLabel("⏳")
         icon.setStyleSheet("font-size: 16px;")
-        icon.setFixedWidth(30)
+        icon.setFixedSize(24, 24)
+        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # Nome do arquivo
-        name_label = QLabel(f"📄 {filename}")
-        name_label.setStyleSheet("font-weight: bold;")
+        # Nome do arquivo (truncado se muito longo)
+        display_name = filename
+        if len(display_name) > 45:
+            display_name = display_name[:42] + "..."
+        
+        name_label = QLabel(f"📄 {display_name}")
+        name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        name_label.setFixedWidth(350)  # Largura fixa
+        name_label.setToolTip(f"📄 {filename}")  # Tooltip com nome completo
         
         # Progress bar
         progress = QProgressBar()
-        progress.setFixedWidth(150)
+        progress.setFixedSize(120, 18)
         progress.setMinimum(0)
         progress.setMaximum(100)
+        progress.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #444;
+                border-radius: 3px;
+                text-align: center;
+                font-size: 10px;
+            }
+            QProgressBar::chunk {
+                background-color: #2cc985;
+                border-radius: 2px;
+            }
+        """)
         
-        # Status
+        # Status com largura fixa para evitar oscilações
         status = QLabel("Aguardando...")
-        status.setStyleSheet("color: #666;")
+        status.setStyleSheet("color: #888; font-size: 10px;")
+        status.setFixedWidth(180)  # Largura fixa para evitar redimensionamento
+        status.setWordWrap(False)  # Sem quebra de linha
+        status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         
         layout.addWidget(icon)
-        layout.addWidget(name_label, 1)  # Stretch
+        layout.addWidget(name_label)
         layout.addWidget(progress)
         layout.addWidget(status)
+        layout.addStretch()  # Preenche espaço restante
         
         self.pdf_widgets[filename] = {
             'icon': icon,
@@ -663,22 +699,54 @@ class BatchProgressDialog(QDialog):
         if filename in self.pdf_widgets:
             widgets = self.pdf_widgets[filename]
             
+            # Atualiza progresso
             widgets['progress'].setValue(progress)
-            widgets['status'].setText(message)
+            widgets['progress'].setToolTip(f"{progress}% concluído")
             
+            # Trunca mensagem se muito longa para evitar oscilações
+            display_message = message
+            if len(display_message) > 25:
+                display_message = display_message[:22] + "..."
+            
+            widgets['status'].setText(display_message)
+            widgets['status'].setToolTip(message)  # Tooltip com mensagem completa
+            
+            # Atualiza ícone baseado no status
             if "✅" in message:
                 widgets['icon'].setText("✅")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #2cc985;")
             elif "❌" in message:
                 widgets['icon'].setText("❌")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #f44336;")
             elif progress > 0:
                 widgets['icon'].setText("🔄")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #1f538d;")
+            else:
+                widgets['icon'].setText("⏳")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #ffa726;")
     
     @pyqtSlot()
     def handle_batch_completed(self):
         """Habilita botão fechar quando processamento termina"""
         self.main_progress.setValue(self.main_progress.maximum())
-        self.main_status.setText("Processamento concluído!")
+        self.main_status.setText("✅ Processamento concluído!")
+        self.main_status.setStyleSheet("color: #2cc985; font-weight: bold;")
         self.close_button.setEnabled(True)
+        self.close_button.setText("✅ Fechar")
+        self.close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2cc985;
+                border: none;
+                border-radius: 6px;
+                padding: 8px 16px;
+                color: white;
+                font-weight: bold;
+                min-height: 20px;
+            }
+            QPushButton:hover {
+                background-color: #259b6e;
+            }
+        """)
 
 class HistoryItemWidget(QWidget):
     """Widget personalizado para item do histórico"""
@@ -692,16 +760,42 @@ class HistoryItemWidget(QWidget):
         
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(8)
         
-        # Ícone de status
+        # Ícone de status com cores
         if entry.is_batch and entry.batch_info.get('processed_in_batch'):
-            icon_text = "📦✅" if entry.success else "📦❌"
+            icon_text = "📦"
+            if entry.success:
+                status_color = "#2cc985"
+                status_symbol = "✅"
+            else:
+                status_color = "#f44336"
+                status_symbol = "❌"
         else:
-            icon_text = "✅" if entry.success else "❌"
+            icon_text = "📄"
+            if entry.success:
+                status_color = "#2cc985"
+                status_symbol = "✅"
+            else:
+                status_color = "#f44336"
+                status_symbol = "❌"
         
-        status_icon = QLabel(icon_text)
-        status_icon.setStyleSheet("font-size: 16px;")
-        status_icon.setFixedWidth(40)
+        status_frame = QFrame()
+        status_frame.setFixedSize(50, 40)
+        status_layout = QVBoxLayout(status_frame)
+        status_layout.setContentsMargins(2, 2, 2, 2)
+        status_layout.setSpacing(0)
+        
+        icon_label = QLabel(icon_text)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet("font-size: 14px;")
+        
+        status_label = QLabel(status_symbol)
+        status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        status_label.setStyleSheet(f"font-size: 12px; color: {status_color}; font-weight: bold;")
+        
+        status_layout.addWidget(icon_label)
+        status_layout.addWidget(status_label)
         
         # Informações principais
         info_layout = QVBoxLayout()
@@ -714,45 +808,81 @@ class HistoryItemWidget(QWidget):
             display_name = f"📄 {Path(entry.pdf_file).stem}"
         
         if entry.is_batch and entry.batch_info.get('batch_size', 0) > 1:
-            display_name += f" (lote {entry.batch_info['batch_size']})"
+            display_name += f" (lote de {entry.batch_info['batch_size']} PDFs)"
+        
+        # Truncar nome se muito longo
+        if len(display_name) > 60:
+            display_name = display_name[:57] + "..."
         
         name_label = QLabel(display_name)
         name_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        name_label.setToolTip(display_name)  # Tooltip com nome completo
         
         # Resultado e timestamp
         if entry.success:
             result_text = f"✓ {entry.result_data.get('total_extracted', 0)} períodos processados"
             if entry.result_data.get('person_name'):
-                result_text += f" • {entry.result_data['person_name']}"
+                person_name = entry.result_data['person_name']
+                if len(person_name) > 25:
+                    person_name = person_name[:22] + "..."
+                result_text += f" • {person_name}"
         else:
-            result_text = f"✗ {entry.result_data.get('error', 'Erro desconhecido')}"
+            error_msg = entry.result_data.get('error', 'Erro desconhecido')
+            if len(error_msg) > 40:
+                error_msg = error_msg[:37] + "..."
+            result_text = f"✗ {error_msg}"
         
-        result_text += f" • {entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}"
+        result_text += f" • {entry.timestamp.strftime('%d/%m/%Y %H:%M')}"
         
         result_label = QLabel(result_text)
         result_label.setStyleSheet("font-size: 10px; color: #888;")
+        result_label.setToolTip(f"Processado em: {entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}")
         
         info_layout.addWidget(name_label)
         info_layout.addWidget(result_label)
         
         # Botões de ação
         buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(5)
+        buttons_layout.setSpacing(4)
         
         if entry.success:
             open_btn = QPushButton("📂")
-            open_btn.setFixedSize(30, 25)
+            open_btn.setFixedSize(28, 24)
             open_btn.setToolTip("Abrir arquivo")
+            open_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #2cc985;
+                    border: none;
+                    border-radius: 4px;
+                    color: white;
+                    font-size: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #259b6e;
+                }
+            """)
             open_btn.clicked.connect(lambda: self.file_open_requested.emit(self.entry))
             buttons_layout.addWidget(open_btn)
         
         details_btn = QPushButton("📝")
-        details_btn.setFixedSize(30, 25)
+        details_btn.setFixedSize(28, 24)
         details_btn.setToolTip("Ver detalhes")
+        details_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #1f538d;
+                border: none;
+                border-radius: 4px;
+                color: white;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background-color: #2a5f9e;
+            }
+        """)
         details_btn.clicked.connect(lambda: self.details_requested.emit(self.entry))
         buttons_layout.addWidget(details_btn)
         
-        layout.addWidget(status_icon)
+        layout.addWidget(status_frame)
         layout.addLayout(info_layout, 1)
         layout.addLayout(buttons_layout)
 
@@ -1331,6 +1461,20 @@ class MainWindow(QMainWindow):
         
         self.processing_history.append(entry)
         self.persistence.save_history_entry(entry)
+        
+        # Atualiza progresso geral se há dialog de progresso
+        if self.progress_dialog and hasattr(self.progress_dialog, 'main_progress'):
+            completed_count = len([h for h in self.processing_history[-len(self.selected_files):] 
+                                 if h.timestamp.date() == datetime.now().date()])
+            self.progress_dialog.main_progress.setValue(completed_count)
+            
+            success_count = len([h for h in self.processing_history[-len(self.selected_files):] 
+                               if h.success and h.timestamp.date() == datetime.now().date()])
+            
+            if completed_count < len(self.selected_files):
+                self.progress_dialog.main_status.setText(
+                    f"Processando... {completed_count}/{len(self.selected_files)} concluídos ({success_count} sucessos)"
+                )
     
     @pyqtSlot()
     def handle_batch_completed(self):
@@ -1393,7 +1537,7 @@ class MainWindow(QMainWindow):
             item_widget.details_requested.connect(self.show_history_details)
             item_widget.file_open_requested.connect(self.open_data_file)
             
-            item.setSizeHint(QSize(0, 60))  # Altura fixa para performance
+            item.setSizeHint(QSize(0, 65))  # Altura fixa ligeiramente maior para melhor legibilidade
             self.history_list.addItem(item)
             self.history_list.setItemWidget(item, item_widget)
         
@@ -1409,8 +1553,10 @@ class MainWindow(QMainWindow):
                 status_text += f" • {batch_count} de lotes, {individual_count} individuais"
             
             self.history_status_label.setText(status_text)
+            self.history_status_label.setStyleSheet("color: #2cc985; font-weight: bold;")
         else:
             self.history_status_label.setText("Nenhum PDF no histórico")
+            self.history_status_label.setStyleSheet("color: #888;")
     
     def show_history_details(self, entry: HistoryEntry):
         """Mostra detalhes de entrada do histórico"""

@@ -922,11 +922,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Processamento de Folha de Pagamento v4.0 - PyQt6")
         self.setGeometry(100, 100, 950, 600)
         
-        # Estado da aplicação
+        # Estado da aplicação - INICIALIZAR PRIMEIRO
         self.selected_files = []
         self.trabalho_dir = None
         self.processing = False
-        self.current_logs = []
+        self.current_logs = []  # Inicializar antes de qualquer callback
         self.processing_history = []
         
         # Processamento
@@ -941,16 +941,16 @@ class MainWindow(QMainWindow):
         # Gerenciador de persistência
         self.persistence = PersistenceManager()
         
-        # Cria interface
+        # Timer para salvar configurações - CRIAR ANTES DA INTERFACE
+        self.save_timer = QTimer()
+        self.save_timer.setSingleShot(True)
+        self.save_timer.timeout.connect(self.save_current_config)
+        
+        # Cria interface (depois de inicializar todas as variáveis)
         self.create_interface()
         
         # Carrega dados persistidos
         self.load_persisted_data()
-        
-        # Timer para salvar configurações
-        self.save_timer = QTimer()
-        self.save_timer.setSingleShot(True)
-        self.save_timer.timeout.connect(self.save_current_config)
     
     def create_interface(self):
         """Cria interface principal"""
@@ -1470,7 +1470,9 @@ class MainWindow(QMainWindow):
     
     def _on_config_changed(self):
         """Callback genérico para mudanças de configuração"""
-        self.save_timer.start(1000)  # Salva após 1 segundo de inatividade
+        # Verifica se save_timer existe antes de usar
+        if hasattr(self, 'save_timer'):
+            self.save_timer.start(1000)  # Salva após 1 segundo de inatividade
     
     def save_current_config(self):
         """Salva configuração atual"""
@@ -1515,6 +1517,10 @@ class MainWindow(QMainWindow):
     
     def add_log_message(self, message):
         """Adiciona mensagem ao log"""
+        # Verifica se current_logs existe antes de usar
+        if not hasattr(self, 'current_logs'):
+            self.current_logs = []
+            
         timestamp = datetime.now().strftime("%H:%M:%S")
         log_entry = f"[{timestamp}] {message}"
         self.current_logs.append(log_entry)

@@ -7,9 +7,11 @@ PDF Processor Core - Lógica de Processamento
 Módulo central com toda a lógica de processamento de PDFs e atualização de Excel.
 Separado da interface gráfica para melhor organização e reutilização.
 
-Versão 3.2.1 - ATUALIZAÇÕES DE REGRAS:
+Versão 3.2.2 - ATUALIZAÇÕES DE REGRAS:
 - Colunas reorganizadas: AC→INDICE DIF. HE 75%, AE→INDICE ADC. NOT.
 - Novos códigos: 01017101, 01022001, 01007501
+- NOVA REGRA: 01003601 + 01003602 = SOMA quando ambos no mesmo mês (ATENÇÃO)
+- Sistema de atenção para duplicidades de PREMIO PROD. MENSAL
 - Mapeamento corrigido conforme nova estrutura
 
 Autor: Sistema de Extração Automatizada
@@ -44,17 +46,19 @@ class PDFProcessorCore:
         self.progress_callback = progress_callback
         self.log_callback = log_callback
         
-        # Regras de mapeamento para colunas específicas do Excel - ATUALIZADAS v3.2.1
+        # Regras de mapeamento para colunas específicas do Excel - ATUALIZADAS v3.2.2
         self.mapping_rules = {
             # FOLHA NORMAL - Obter da coluna ÍNDICE (com fallback especial para PRODUÇÃO)
             '01003601': {'code': 'PREMIO PROD. MENSAL', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},
-            '01017101': {'code': 'PREMIO PRO. (R)', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},  # NOVO
+            '01003602': {'code': 'PREMIO PROD. MENSAL', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},  
+            '01017101': {'code': 'PREMIO PRO. (R)', 'excel_column': 'X', 'source': 'indice', 'fallback_to_valor': True, 'folha_type': 'FOLHA NORMAL'},
             '01007301': {'code': 'HORAS EXT.100%-180', 'excel_column': 'Y', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
-            '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AE', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # MUDOU: AC → AE
-            '01022001': {'code': 'ADICIONAL NOTURNO 25% (R)', 'excel_column': 'AE', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # NOVO
+            '01007302': {'code': 'HORAS EXT.100%-180', 'excel_column': 'Y', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # NOVO
+            '01009001': {'code': 'ADIC.NOT.25%-180', 'excel_column': 'AE', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '01022001': {'code': 'ADICIONAL NOTURNO 25% (R)', 'excel_column': 'AE', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
             '01003501': {'code': 'HORAS EXT.75%-180', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
-            '01007501': {'code': 'HORAS EXT.75%', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # NOVO
-            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AC', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},  # MUDOU: AA → AC
+            '01007501': {'code': 'HORAS EXT.75%', 'excel_column': 'AA', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
+            '02007501': {'code': 'DIFER.PROV. HORAS EXTRAS 75%', 'excel_column': 'AC', 'source': 'indice', 'folha_type': 'FOLHA NORMAL'},
             
             # FOLHA NORMAL - Obter da coluna VALOR
             '09090301_NORMAL': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor', 'folha_type': 'FOLHA NORMAL', 'original_code': '09090301'},
@@ -62,6 +66,12 @@ class PDFProcessorCore:
             # 13 SALARIO - Obter da coluna VALOR
             '09090301_13SAL': {'code': 'SALARIO CONTRIB INSS', 'excel_column': 'B', 'source': 'valor', 'folha_type': '13 SALARIO', 'original_code': '09090301'},
             '09090101_13SAL': {'code': 'REMUNERACAO BRUTA', 'excel_column': 'B', 'source': 'valor', 'folha_type': '13 SALARIO', 'original_code': '09090101', 'is_fallback': True}
+        }
+        
+        # Códigos que podem ser somados quando aparecem juntos no mesmo período (casos específicos conhecidos)
+        self.sumable_codes = {
+            'X': ['01003601', '01003602'],  # PREMIO PROD. MENSAL - ambos vão para coluna X
+            'Y': ['01007301', '01007302']   # HORAS EXT.100%-180 - ambos vão para coluna Y
         }
         
         # Planilha preferida
@@ -419,6 +429,7 @@ class PDFProcessorCore:
         """Extrai dados específicos de uma página usando as regras de mapeamento"""
         data = {}
         codes_found = []
+        attention_info = {}
         
         relevant_rules = {k: v for k, v in self.mapping_rules.items() if v.get('folha_type') == folha_type}
         
@@ -427,6 +438,12 @@ class PDFProcessorCore:
         # Para 13 SALARIO, fallback especial entre 09090301 e 09090101
         found_09090301 = None
         found_09090101 = None
+        
+        # Para códigos específicos com soma (01003601+01003602, 01007301+01007302)
+        sumable_values = {}  # {coluna: {codigo: valor}}
+        
+        # Para detecção geral de duplicidades por descrição
+        description_codes = {}  # {descrição: [(codigo, valor, coluna)]}
         
         for line in lines:
             line = line.strip()
@@ -447,8 +464,27 @@ class PDFProcessorCore:
                         elif original_code == '09090101':
                             found_09090101 = valor
                     
-                    # Lógica normal para outros códigos
-                    if folha_type == 'FOLHA NORMAL' or (folha_type == '13 SALARIO' and original_code not in ['09090301', '09090101']):
+                    # Para códigos específicos com soma (PREMIO PROD + HORAS EXT 100%)
+                    elif original_code in ['01003601', '01003602', '01007301', '01007302']:
+                        value_to_use = None
+                        
+                        if rule['source'] == 'indice':
+                            if indice is not None and indice != 0:
+                                value_to_use = indice
+                            elif rule.get('fallback_to_valor', False) and valor is not None:
+                                value_to_use = valor
+                        elif rule['source'] == 'valor' and valor is not None:
+                            value_to_use = valor
+                        
+                        if value_to_use is not None:
+                            excel_column = rule['excel_column']
+                            
+                            if excel_column not in sumable_values:
+                                sumable_values[excel_column] = {}
+                            sumable_values[excel_column][original_code] = value_to_use
+                    
+                    # Para outros códigos e detecção geral por descrição
+                    elif folha_type == 'FOLHA NORMAL':
                         value_to_use = None
                         
                         if rule['source'] == 'indice':
@@ -461,6 +497,82 @@ class PDFProcessorCore:
                         
                         if value_to_use is not None:
                             data[rule['excel_column']] = value_to_use
+                            
+                            # Registra para detecção de duplicidade por descrição
+                            description = rule['code']
+                            if description not in description_codes:
+                                description_codes[description] = []
+                            description_codes[description].append((original_code, value_to_use, rule['excel_column']))
+        
+        # Processa códigos específicos com soma
+        for excel_column, codes_values in sumable_values.items():
+            codes_found_in_column = list(codes_values.keys())
+            
+            # Verifica se são códigos que devem ser somados
+            sumable_for_column = self.sumable_codes.get(excel_column, [])
+            
+            if len(codes_found_in_column) > 1 and all(code in sumable_for_column for code in codes_found_in_column):
+                # Soma automática para códigos específicos conhecidos
+                total_value = sum(codes_values.values())
+                data[excel_column] = total_value
+                
+                valores_str = []
+                for code, value in codes_values.items():
+                    valores_str.append(f"{code}: {value}")
+                
+                # Determina descrição baseada no primeiro código encontrado
+                first_code = codes_found_in_column[0]
+                description = None
+                for rule in relevant_rules.values():
+                    if rule.get('original_code', rule.get('code')) == first_code:
+                        description = rule['code']
+                        break
+                
+                if not description:
+                    description = "CÓDIGOS ESPECÍFICOS"
+                
+                attention_key = f'duplicidade_{excel_column.lower()}'
+                attention_info[attention_key] = {
+                    'codigos': codes_found_in_column,
+                    'valores_individuais': codes_values,
+                    'valor_somado': total_value,
+                    'detalhes': f"SOMA dos códigos {' + '.join(codes_found_in_column)} = {total_value} ({', '.join(valores_str)})",
+                    'tipo': 'soma_automatica',
+                    'descricao': description
+                }
+                
+                self._log(f"ATENÇÃO: Duplicidade {description} detectada - {attention_info[attention_key]['detalhes']}", "WARNING")
+                
+            elif len(codes_found_in_column) == 1:
+                # Apenas um código encontrado - comportamento normal
+                code = codes_found_in_column[0]
+                data[excel_column] = codes_values[code]
+        
+        # Detecção geral de duplicidades por descrição (SEM SOMA)
+        for description, code_info_list in description_codes.items():
+            if len(code_info_list) > 1:
+                # Múltiplos códigos com mesma descrição - apenas atenção
+                codes_only = [info[0] for info in code_info_list]
+                
+                # Verifica se não são códigos já tratados especificamente
+                already_handled = False
+                for excel_column, sumable_codes_list in self.sumable_codes.items():
+                    if all(code in sumable_codes_list for code in codes_only):
+                        already_handled = True
+                        break
+                
+                if not already_handled:
+                    attention_key = f'duplicidade_descricao_{len(attention_info)}'
+                    attention_info[attention_key] = {
+                        'codigos': codes_only,
+                        'descricao': description,
+                        'detalhes': f"Códigos {' + '.join(codes_only)} possuem descrição idêntica: '{description}' - verificação manual recomendada",
+                        'tipo': 'duplicidade_descricao',
+                        'valores_individuais': {info[0]: info[1] for info in code_info_list},
+                        'colunas_afetadas': list(set(info[2] for info in code_info_list))
+                    }
+                    
+                    self._log(f"ATENÇÃO: Duplicidade por descrição detectada - {attention_info[attention_key]['detalhes']}", "WARNING")
         
         # Para 13 SALARIO, aplica fallback
         if folha_type == '13 SALARIO':
@@ -473,6 +585,10 @@ class PDFProcessorCore:
             
             if value_to_use is not None:
                 data['B'] = value_to_use
+        
+        # Adiciona informações de atenção aos dados
+        if attention_info:
+            data['_attention_info'] = attention_info
         
         return data
 
@@ -601,6 +717,7 @@ class PDFProcessorCore:
             updates_count = 0
             failed_periods = []
             successful_periods = []
+            attention_periods = []  # NOVO: períodos com atenção
             
             total_periods = sum(len(periods) for periods in extracted_data.values())
             current_period = 0
@@ -623,8 +740,29 @@ class PDFProcessorCore:
                     
                     if row_num:
                         period_updates = 0
+                        has_attention = False
+                        attention_details = []
+                        
+                        # Verifica se há informações de atenção
+                        if '_attention_info' in data:
+                            has_attention = True
+                            attention_info = data['_attention_info']
+                            
+                            # Converte informações de atenção para formato detalhado
+                            detalhes_periodo = []
+                            for key, details in attention_info.items():
+                                detalhes_periodo.append(details)
+                            
+                            attention_details.append({
+                                'periodo': periodo,
+                                'folha_type': folha_type,
+                                'detalhes': detalhes_periodo
+                            })
                         
                         for column, value in data.items():
+                            if column.startswith('_'):  # Ignora metadados
+                                continue
+                                
                             cell_address = f"{column}{row_num}"
                             old_value = worksheet[cell_address].value
                             
@@ -634,7 +772,15 @@ class PDFProcessorCore:
                                 period_updates += 1
                         
                         if period_updates > 0:
-                            successful_periods.append(f"{periodo} ({folha_type})")
+                            period_result = f"{periodo} ({folha_type})"
+                            if has_attention:
+                                period_result += " - ATENÇÃO"
+                                attention_periods.append({
+                                    'periodo': periodo,
+                                    'folha_type': folha_type,
+                                    'detalhes': attention_details
+                                })
+                            successful_periods.append(period_result)
                         else:
                             failed_periods.append(f"{periodo} ({folha_type}) - células já preenchidas")
                     else:
@@ -645,6 +791,13 @@ class PDFProcessorCore:
             # Resultado final
             success_periods = len(successful_periods)
             self._log(f"Processamento concluído: {success_periods}/{total_periods} períodos atualizados")
+            
+            if attention_periods:
+                self._log(f"ATENÇÃO: {len(attention_periods)} períodos com observações especiais", "WARNING")
+                for attention in attention_periods[:3]:
+                    self._log(f"  {attention['periodo']} ({attention['folha_type']}): {len(attention['detalhes'])} observação(ões)", "WARNING")
+                if len(attention_periods) > 3:
+                    self._log(f"  ... e mais {len(attention_periods) - 3} períodos com atenção", "WARNING")
             
             if failed_periods:
                 self._log(f"Falhas em {len(failed_periods)} períodos", "WARNING")
@@ -657,6 +810,7 @@ class PDFProcessorCore:
                 'total_periods': total_periods,
                 'success_periods': success_periods,
                 'failed_periods': failed_periods,
+                'attention_periods': attention_periods,  # NOVO
                 'updates_count': updates_count
             }
             
@@ -764,6 +918,9 @@ class PDFProcessorCore:
                 
                 self._update_progress(100, "Processamento concluído!")
                 
+                # Determina status baseado em atenções
+                has_attention = len(excel_results.get('attention_periods', [])) > 0
+                
                 return {
                     'success': True,
                     'person_name': person_name,
@@ -775,6 +932,8 @@ class PDFProcessorCore:
                     'total_extracted': total_extracted,
                     'folha_normal_periods': len(extracted_data.get('FOLHA NORMAL', {})),
                     'salario_13_periods': len(extracted_data.get('13 SALARIO', {})),
+                    'has_attention': has_attention,  # NOVO
+                    'attention_periods': excel_results.get('attention_periods', []),  # NOVO - estrutura detalhada
                     **excel_results
                 }
             else:

@@ -7,7 +7,7 @@ PDF para Excel Desktop App - Interface PyQt6
 Interface gráfica moderna usando PyQt6 que utiliza o módulo
 pdf_processor_core.py para toda a lógica de processamento.
 
-Versão 4.0 - MIGRAÇÃO PARA PYQT6:
+Versão 4.0.1 - PROCESSAMENTO UNIFICADO:
 - Performance 10-20x superior
 - Threading nativo com signals/slots thread-safe
 - Virtualização automática de listas grandes
@@ -15,14 +15,18 @@ Versão 4.0 - MIGRAÇÃO PARA PYQT6:
 - Interface responsiva e moderna
 - Eliminação de polling manual
 - Splash Screen profissional
+- Sistema de atenção para códigos duplicados (01003601 + 01003602)
+- NOVO: Processamento sempre via ThreadPoolExecutor (simplificação)
 
-Funcionalidades v4.0:
+Funcionalidades v4.0.1:
 - Seleção múltipla de PDFs com interface otimizada
-- Processamento paralelo com comunicação thread-safe
+- Processamento paralelo unificado com comunicação thread-safe
 - Updates em tempo real sem latência
 - Histórico virtualizado para performance máxima
 - Styling moderno com QSS
 - Splash screen com progresso de carregamento
+- Sistema automático para duplicidades de PREMIO PROD. MENSAL
+- Arquitetura simplificada (sempre threads, zero inconsistência)
 
 Dependências:
 pip install PyQt6
@@ -122,7 +126,7 @@ class SplashScreen(QSplashScreen):
         subtitle_font = QFont("Arial", 14)
         painter.setFont(subtitle_font)
         painter.setPen(QColor("#aaaaaa"))
-        painter.drawText(20, 100, width-40, 25, Qt.AlignmentFlag.AlignCenter, "Sistema de Automatização v4.0")
+        painter.drawText(20, 100, width-40, 25, Qt.AlignmentFlag.AlignCenter, "Sistema de Automatização v4.0.1")
         
         painter.end()
         return pixmap
@@ -264,6 +268,14 @@ QPushButton.danger:hover {
     background-color: #c82333;
 }
 
+QPushButton.attention {
+    background-color: #ff9800;
+}
+
+QPushButton.attention:hover {
+    background-color: #f57c00;
+}
+
 QTabWidget::pane {
     border: 1px solid #444;
     background-color: #2b2b2b;
@@ -350,6 +362,14 @@ QFrame:hover {
     border-color: #1f538d;
 }
 
+QFrame.attention {
+    border-color: #ff9800;
+}
+
+QFrame.attention:hover {
+    border-color: #f57c00;
+}
+
 QGroupBox {
     background-color: #2b2b2b;
     border: 1px solid #444;
@@ -362,6 +382,15 @@ QGroupBox::title {
     subcontrol-origin: margin;
     left: 10px;
     padding: 0 5px 0 5px;
+}
+
+QGroupBox.attention {
+    border: 2px solid #ff9800;
+    background-color: #2d2416;
+}
+
+QGroupBox.attention::title {
+    color: #ff9800;
 }
 
 QLabel {
@@ -437,10 +466,14 @@ class HistoryEntry:
     logs: List[str]
     is_batch: bool = False
     batch_info: Dict = None
+    has_attention: bool = False  # NOVO
+    attention_details: List = None  # NOVO
     
     def __post_init__(self):
         if self.batch_info is None:
             self.batch_info = {}
+        if self.attention_details is None:
+            self.attention_details = []
 
 class PersistenceManager:
     """Gerencia persistência de configurações e histórico"""
@@ -499,7 +532,9 @@ class PersistenceManager:
                         result_data=entry_data['result_data'],
                         logs=entry_data['logs'],
                         is_batch=entry_data.get('is_batch', False),
-                        batch_info=entry_data.get('batch_info', {})
+                        batch_info=entry_data.get('batch_info', {}),
+                        has_attention=entry_data.get('has_attention', False),  # NOVO
+                        attention_details=entry_data.get('attention_details', [])  # NOVO
                     )
                     all_entries.append(entry)
             
@@ -536,7 +571,9 @@ class PersistenceManager:
                 'result_data': entry_data.result_data,
                 'logs': entry_data.logs[:50],
                 'is_batch': getattr(entry_data, 'is_batch', False),
-                'batch_info': getattr(entry_data, 'batch_info', {})
+                'batch_info': getattr(entry_data, 'batch_info', {}),
+                'has_attention': getattr(entry_data, 'has_attention', False),  # NOVO
+                'attention_details': getattr(entry_data, 'attention_details', [])  # NOVO
             })
             
             history_data['sessions'] = history_data['sessions'][-10:]
@@ -572,18 +609,19 @@ class PDFProcessorThread(QThread):
         self.total_count = len(pdf_files)
     
     def run(self):
-        """Executa processamento paralelo com ThreadPoolExecutor"""
-        if len(self.pdf_files) == 1:
-            # Processamento individual
-            self._process_single_pdf(self.pdf_files[0])
-        else:
-            # Processamento em lote
-            self._process_batch()
-        
+        """Executa processamento unificado com ThreadPoolExecutor para todos os casos"""
+        # Sempre usa processamento em lote (ThreadPoolExecutor)
+        # mesmo para 1 arquivo - simplicidade > micro-otimização
+        self._process_batch()
         self.batch_completed.emit()
     
     def _process_single_pdf(self, pdf_file):
-        """Processa um único PDF"""
+        """
+        Processa um único PDF (usado tanto para casos individuais quanto em lote)
+        
+        Este método é chamado sempre através do ThreadPoolExecutor, 
+        garantindo comportamento consistente independente da quantidade de arquivos.
+        """
         filename = Path(pdf_file).name
         
         try:
@@ -609,7 +647,15 @@ class PDFProcessorThread(QThread):
             results = processor.process_pdf(pdf_filename)
             
             if results['success']:
-                self.progress_updated.emit(filename, 100, f"✅ {results['total_extracted']} períodos processados")
+                # Determina ícone baseado em atenção
+                if results.get('has_attention', False):
+                    icon = "⚠️"
+                    message = f"⚠️ {results['total_extracted']} períodos processados (ATENÇÃO)"
+                else:
+                    icon = "✅"
+                    message = f"✅ {results['total_extracted']} períodos processados"
+                
+                self.progress_updated.emit(filename, 100, message)
             else:
                 self.progress_updated.emit(filename, 0, f"❌ {results['error']}")
             
@@ -621,7 +667,15 @@ class PDFProcessorThread(QThread):
             self.pdf_completed.emit(filename, error_result)
     
     def _process_batch(self):
-        """Processa múltiplos PDFs em paralelo"""
+        """
+        Processa arquivos usando ThreadPoolExecutor (unificado para todos os casos)
+        
+        Sempre usa ThreadPoolExecutor mesmo para 1 arquivo, garantindo:
+        - Comportamento consistente
+        - Código mais simples
+        - Menos bugs de inconsistência
+        - Overhead desprezível (~0.01% do tempo total)
+        """
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_pdf = {
                 executor.submit(self._process_single_pdf, pdf_file): pdf_file 
@@ -845,10 +899,13 @@ class BatchProgressDialog(QDialog):
             widgets['status'].setText(display_message)
             widgets['status'].setToolTip(message)  # Tooltip com mensagem completa
             
-            # Atualiza ícone baseado no status
+            # Atualiza ícone baseado no status (incluindo atenção)
             if "✅" in message:
                 widgets['icon'].setText("✅")
                 widgets['icon'].setStyleSheet("font-size: 16px; color: #2cc985;")
+            elif "⚠️" in message:
+                widgets['icon'].setText("⚠️")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #ff9800;")
             elif "❌" in message:
                 widgets['icon'].setText("❌")
                 widgets['icon'].setStyleSheet("font-size: 16px; color: #f44336;")
@@ -898,10 +955,14 @@ class HistoryItemWidget(QWidget):
         layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(12)
         
-        # Ícone de status simples (apenas sucesso ou erro)
+        # Ícone de status com atenção
         if entry.success:
-            status_icon = "✅"
-            status_color = "#2cc985"
+            if entry.has_attention:
+                status_icon = "⚠️"
+                status_color = "#ff9800"
+            else:
+                status_icon = "✅"
+                status_color = "#2cc985"
         else:
             status_icon = "❌"
             status_color = "#f44336"
@@ -915,15 +976,15 @@ class HistoryItemWidget(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(3)
         
-        # Nome do arquivo
+        # Nome do arquivo (simples, sem indicação de lote)
         if entry.success and entry.result_data.get('arquivo_final'):
             display_name = Path(entry.result_data['arquivo_final']).stem
         else:
             display_name = Path(entry.pdf_file).stem
         
-        # Indicador de lote apenas no texto se necessário
-        if entry.is_batch and entry.batch_info.get('batch_size', 0) > 1:
-            display_name += f" (lote de {entry.batch_info['batch_size']} PDFs)"
+        # Indicador apenas de atenção, se necessário
+        if entry.has_attention:
+            display_name += " (ATENÇÃO)"
         
         # Truncar nome se muito longo
         if len(display_name) > 60:
@@ -941,6 +1002,9 @@ class HistoryItemWidget(QWidget):
                 if len(person_name) > 25:
                     person_name = person_name[:22] + "..."
                 result_text += f" • {person_name}"
+            
+            if entry.has_attention:
+                result_text += " • ⚠️ COM OBSERVAÇÕES"
         else:
             error_msg = entry.result_data.get('error', 'Erro desconhecido')
             if len(error_msg) > 40:
@@ -1003,7 +1067,7 @@ class HistoryDetailsDialog(QDialog):
         self.setModal(True)
         
         # Define tamanho fixo e desabilita redimensionamento/maximizar  
-        self.setFixedSize(750, 600)
+        self.setFixedSize(750, 650)  # Aumentado para incluir seção de atenção
         self.setWindowFlags(
             Qt.WindowType.Dialog | 
             Qt.WindowType.WindowCloseButtonHint
@@ -1015,10 +1079,10 @@ class HistoryDetailsDialog(QDialog):
         header_frame = QFrame()
         header_layout = QVBoxLayout(header_frame)
         
-        # Título
+        # Título (simples, sem indicação de lote)
         title_text = f"📄 {Path(entry.pdf_file).stem}"
-        if entry.is_batch and entry.batch_info.get('batch_size', 0) > 1:
-            title_text += f" (Lote de {entry.batch_info['batch_size']})"
+        if entry.has_attention:
+            title_text += " ⚠️"
         
         title_label = QLabel(title_text)
         title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
@@ -1028,7 +1092,10 @@ class HistoryDetailsDialog(QDialog):
         info_parts = []
         
         if entry.success:
-            info_parts.append("✅ Sucesso")
+            if entry.has_attention:
+                info_parts.append("⚠️ Sucesso com Atenção")
+            else:
+                info_parts.append("✅ Sucesso")
         else:
             info_parts.append("❌ Erro")
         
@@ -1055,7 +1122,142 @@ class HistoryDetailsDialog(QDialog):
         header_layout.addWidget(info_label)
         layout.addWidget(header_frame)
         
-        # Área de logs (expandida)
+        # Seção de atenção (NOVA) - prioritária
+        if entry.has_attention and entry.attention_details:
+            attention_group = QGroupBox("⚠️ PONTOS DE ATENÇÃO")
+            attention_group.setProperty("class", "attention")
+            attention_layout = QVBoxLayout(attention_group)
+            
+            # Informação destacada
+            attention_info = QLabel(
+                "🔍 Durante o processamento foram detectadas situações que requerem atenção:"
+            )
+            attention_info.setStyleSheet("color: #ff9800; font-weight: bold; font-size: 12px;")
+            attention_info.setWordWrap(True)
+            attention_layout.addWidget(attention_info)
+            
+            # Lista os pontos de atenção com informações estruturadas
+            for i, detail in enumerate(entry.attention_details, 1):
+                attention_item = QFrame()
+                attention_item.setStyleSheet("""
+                    QFrame {
+                        background-color: #3d2d1a;
+                        border: 1px solid #ff9800;
+                        border-radius: 4px;
+                        padding: 8px;
+                        margin: 2px;
+                    }
+                """)
+                
+                attention_item_layout = QVBoxLayout(attention_item)
+                attention_item_layout.setContentsMargins(8, 4, 8, 4)
+                
+                # Título do ponto de atenção
+                titulo = QLabel(f"📋 Ponto {i}: {detail.get('periodo', 'N/A')} ({detail.get('folha_type', 'N/A')})")
+                titulo.setStyleSheet("color: #ff9800; font-weight: bold; font-size: 11px;")
+                attention_item_layout.addWidget(titulo)
+                
+                # Processa cada detalhe de atenção
+                detalhes_list = detail.get('detalhes', [])
+                
+                # Se não há detalhes estruturados, mostra informação para dados antigos
+                if not detalhes_list:
+                    info_label = QLabel("💡 Dados processados com versão anterior - detalhes não disponíveis")
+                    info_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 15px; font-style: italic;")
+                    attention_item_layout.addWidget(info_label)
+                    
+                    help_label = QLabel("ℹ️ Processe novamente o PDF para ver informações detalhadas")
+                    help_label.setStyleSheet("color: #888; font-size: 9px; margin-left: 15px; font-style: italic;")
+                    attention_item_layout.addWidget(help_label)
+                    attention_layout.addWidget(attention_item)
+                    continue
+                
+                for detalhe_raw in detalhes_list:
+                    if isinstance(detalhe_raw, dict):
+                        # Informação estruturada
+                        tipo = detalhe_raw.get('tipo', 'desconhecido')
+                        
+                        if tipo == 'soma_automatica':
+                            # Soma automática (PREMIO PROD, HE 100%, etc.)
+                            descricao = detalhe_raw.get('descricao', 'CÓDIGOS ESPECÍFICOS')
+                            codigos = detalhe_raw.get('codigos', [])
+                            valor_somado = detalhe_raw.get('valor_somado', 0)
+                            valores_individuais = detalhe_raw.get('valores_individuais', {})
+                            
+                            detalhe_label = QLabel(f"💡 SOMA AUTOMÁTICA - {descricao}")
+                            detalhe_label.setStyleSheet("color: #ffcc80; font-weight: bold; font-size: 10px; margin-left: 15px;")
+                            attention_item_layout.addWidget(detalhe_label)
+                            
+                            # Mostra códigos e valor final
+                            codigos_str = ' + '.join(codigos)
+                            codigos_label = QLabel(f"📋 {codigos_str} = {valor_somado}")
+                            codigos_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 25px;")
+                            attention_item_layout.addWidget(codigos_label)
+                            
+                            # Mostra valores individuais
+                            for codigo, valor in valores_individuais.items():
+                                valor_label = QLabel(f"   • {codigo}: {valor}")
+                                valor_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 35px;")
+                                attention_item_layout.addWidget(valor_label)
+                        
+                        elif tipo == 'duplicidade_descricao':
+                            # Duplicidade por descrição (descoberta automática)
+                            descricao = detalhe_raw.get('descricao', 'DESCRIÇÃO DESCONHECIDA')
+                            codigos = detalhe_raw.get('codigos', [])
+                            valores_individuais = detalhe_raw.get('valores_individuais', {})
+                            colunas = detalhe_raw.get('colunas_afetadas', [])
+                            
+                            detalhe_label = QLabel(f"🔍 DUPLICIDADE DETECTADA - {descricao}")
+                            detalhe_label.setStyleSheet("color: #ffcc80; font-weight: bold; font-size: 10px; margin-left: 15px;")
+                            attention_item_layout.addWidget(detalhe_label)
+                            
+                            # Mostra códigos
+                            codigos_str = ' + '.join(codigos)
+                            codigos_label = QLabel(f"📋 {codigos_str} (verificação manual recomendada)")
+                            codigos_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 25px;")
+                            attention_item_layout.addWidget(codigos_label)
+                            
+                            # Mostra colunas afetadas
+                            if colunas:
+                                colunas_label = QLabel(f"📊 Colunas: {', '.join(colunas)}")
+                                colunas_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 25px;")
+                                attention_item_layout.addWidget(colunas_label)
+                            
+                            # Mostra valores preservados individualmente  
+                            for codigo, valor in valores_individuais.items():
+                                valor_label = QLabel(f"   • {codigo}: {valor} (preservado)")
+                                valor_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 35px;")
+                                attention_item_layout.addWidget(valor_label)
+                        
+                        else:
+                            # Formato não reconhecido - mostra detalhes como texto
+                            detalhes_text = detalhe_raw.get('detalhes', str(detalhe_raw))
+                            detalhe_label = QLabel(f"💡 {detalhes_text}")
+                            detalhe_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 15px;")
+                            detalhe_label.setWordWrap(True)
+                            attention_item_layout.addWidget(detalhe_label)
+                    
+                    else:
+                        # String simples - compatibilidade com versões anteriores
+                        detalhe_label = QLabel(f"💡 {detalhe_raw}")
+                        detalhe_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 15px;")
+                        detalhe_label.setWordWrap(True)
+                        attention_item_layout.addWidget(detalhe_label)
+                
+                attention_layout.addWidget(attention_item)
+            
+            # Explicação
+            explanation = QLabel(
+                "ℹ️ Estes pontos de atenção não impedem o funcionamento da planilha, "
+                "mas indicam situações especiais que foram tratadas automaticamente."
+            )
+            explanation.setStyleSheet("color: #888; font-size: 10px; font-style: italic;")
+            explanation.setWordWrap(True)
+            attention_layout.addWidget(explanation)
+            
+            layout.addWidget(attention_group)
+        
+        # Área de logs (ajustada)
         logs_group = QGroupBox("📄 Logs Detalhados")
         logs_layout = QVBoxLayout(logs_group)
         
@@ -1088,7 +1290,7 @@ class HistoryDetailsDialog(QDialog):
         layout.addLayout(buttons_layout)
     
     def _populate_logs(self):
-        """Popula área de logs"""
+        """Popula área de logs com informações resumidas"""
         header_info = [
             f"📄 Arquivo: {self.entry.pdf_file}",
             f"🕒 Processado em: {self.entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}",
@@ -1104,6 +1306,10 @@ class HistoryDetailsDialog(QDialog):
                 salario_13 = self.entry.result_data.get('salario_13_periods', 0)
                 header_info.append(f"📊 Resultado: {total} períodos processados (FOLHA NORMAL: {folha_normal}, 13º SALÁRIO: {salario_13})")
             
+            # Indica se há atenção
+            if self.entry.has_attention:
+                header_info.append(f"⚠️ ATENÇÃO: Processamento com observações especiais")
+            
             if self.entry.result_data.get('arquivo_final'):
                 header_info.append(f"💾 Arquivo final: {self.entry.result_data['arquivo_final']}")
                 
@@ -1113,19 +1319,16 @@ class HistoryDetailsDialog(QDialog):
             if self.entry.result_data and self.entry.result_data.get('error'):
                 header_info.append(f"❌ Erro: {self.entry.result_data['error']}")
         
-        if self.entry.is_batch and self.entry.batch_info.get('processed_in_batch'):
-            batch_size = self.entry.batch_info.get('batch_size', 0)
-            if batch_size > 1:
-                header_info.append(f"📦 Processado em lote de {batch_size} PDFs")
+        # Informações sobre processamento (sem logs extensos)
+        header_info.append("")
+        header_info.append("📋 RESUMO DO PROCESSAMENTO:")
+        header_info.append(f"Status: {'✅ Sucesso' if self.entry.success else '❌ Falha'}")
         
-        header_info.extend(["", "=" * 80, "📄 LOGS DETALHADOS DO PROCESSAMENTO:", "=" * 80, ""])
+        if self.entry.has_attention:
+            header_info.append("⚠️ Observações: Situações especiais detectadas e tratadas automaticamente")
         
-        if self.entry.logs:
-            all_lines = header_info + self.entry.logs
-        else:
-            all_lines = header_info + ["[INFO] Nenhum log detalhado disponível para esta entrada."]
-        
-        content = "\n".join(all_lines)
+        # Apenas informações resumidas, sem logs extensos
+        content = "\n".join(header_info)
         self.logs_text.setPlainText(content)
     
     def _open_file(self):
@@ -1162,7 +1365,7 @@ class MainWindow(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Processamento de Folha de Pagamento v4.0 - PyQt6")
+        self.setWindowTitle("Processamento de Folha de Pagamento v4.0.1 - PyQt6")
         
         # Define tamanho fixo e desabilita redimensionamento/maximizar
         self.setFixedSize(950, 600)
@@ -1223,7 +1426,7 @@ class MainWindow(QMainWindow):
         self.create_settings_tab()
         
         # Status bar
-        self.statusBar().showMessage("Sistema iniciado - v4.0 com PyQt6")
+        self.statusBar().showMessage("Sistema iniciado - v4.0.1 PyQt6")
     
     def create_header(self, layout):
         """Cria header da aplicação"""
@@ -1234,7 +1437,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 22px; font-weight: bold; padding: 10px;")
         
-        subtitle = QLabel("Automatização de folhas de pagamento PDF para Excel v4.0 - PyQt6 Performance")
+        subtitle = QLabel("Automatização de folhas de pagamento PDF para Excel v4.0.1 - PyQt6 Performance")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet("font-size: 11px; color: #888; padding-bottom: 10px;")
         
@@ -1376,10 +1579,10 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(settings_widget)
         
         # Processamento paralelo
-        parallel_group = QGroupBox("🚀 Processamento Paralelo")
+        parallel_group = QGroupBox("🚀 Processamento (Sempre Paralelo)")
         parallel_layout = QFormLayout(parallel_group)
         
-        parallel_desc = QLabel("Configure quantos PDFs podem ser processados simultaneamente.")
+        parallel_desc = QLabel("Configure quantos PDFs podem ser processados simultaneamente. O sistema sempre usa ThreadPoolExecutor para garantir comportamento consistente.")
         parallel_desc.setStyleSheet("color: #888;")
         parallel_desc.setWordWrap(True)
         parallel_layout.addRow(parallel_desc)
@@ -1417,6 +1620,24 @@ class MainWindow(QMainWindow):
         
         verbose_layout.addWidget(self.verbose_checkbox)
         layout.addWidget(verbose_group)
+        
+        # Informações sobre funcionalidades (SEÇÃO REORGANIZADA)
+        features_group = QGroupBox("ℹ️ Funcionalidades Automáticas")
+        features_layout = QVBoxLayout(features_group)
+        
+        features_desc = QLabel(
+            "O sistema detecta e trata automaticamente situações especiais durante o processamento:\n\n"
+            "• 📋 DUPLICIDADE DE CÓDIGOS: Quando os códigos 01003601 e 01003602 (PREMIO PROD. MENSAL) "
+            "aparecem no mesmo mês, os valores são somados automaticamente.\n\n"
+            "• ⚠️ MARCAÇÃO AUTOMÁTICA: Processamentos com situações especiais são marcados para referência.\n\n"
+            "• 🧵 PROCESSAMENTO UNIFICADO: Sempre usa ThreadPoolExecutor para comportamento consistente.\n\n"
+            "• 📝 DETALHES COMPLETOS: Informações detalhadas sobre o processamento estão sempre disponíveis."
+        )
+        features_desc.setStyleSheet("color: #888; font-size: 11px;")
+        features_desc.setWordWrap(True)
+        features_layout.addWidget(features_desc)
+        
+        layout.addWidget(features_group)
         
         layout.addStretch()
         
@@ -1603,12 +1824,11 @@ class MainWindow(QMainWindow):
         self.processor_thread.batch_completed.connect(self.handle_batch_completed)
         self.processor_thread.log_message.connect(self.add_log_message)
         
-        # Mostra dialog de progresso se múltiplos PDFs
-        if len(self.selected_files) > 1:
-            self.progress_dialog = BatchProgressDialog(self.selected_files, self)
-            self.processor_thread.progress_updated.connect(self.progress_dialog.update_pdf_progress)
-            self.processor_thread.batch_completed.connect(self.progress_dialog.handle_batch_completed)
-            self.progress_dialog.show()
+        # Mostra dialog de progresso para todos os casos
+        self.progress_dialog = BatchProgressDialog(self.selected_files, self)
+        self.processor_thread.progress_updated.connect(self.progress_dialog.update_pdf_progress)
+        self.processor_thread.batch_completed.connect(self.progress_dialog.handle_batch_completed)
+        self.progress_dialog.show()
         
         # Inicia processamento
         self.processor_thread.start()
@@ -1621,6 +1841,19 @@ class MainWindow(QMainWindow):
     @pyqtSlot(str, dict)
     def handle_pdf_completed(self, filename, result_data):
         """Manipula conclusão de PDF individual"""
+        # Determina se há atenção
+        has_attention = result_data.get('has_attention', False)
+        attention_details = []
+        
+        # Converte attention_periods para o formato correto
+        if result_data.get('attention_periods'):
+            for attention_period in result_data['attention_periods']:
+                attention_details.append({
+                    'periodo': attention_period.get('periodo', 'N/A'),
+                    'folha_type': attention_period.get('folha_type', 'N/A'),
+                    'detalhes': attention_period.get('detalhes', [])
+                })
+        
         # Adiciona ao histórico
         entry = HistoryEntry(
             timestamp=datetime.now(),
@@ -1629,7 +1862,9 @@ class MainWindow(QMainWindow):
             result_data=result_data,
             logs=self.current_logs.copy(),
             is_batch=len(self.selected_files) > 1,
-            batch_info={'batch_size': len(self.selected_files), 'processed_in_batch': True} if len(self.selected_files) > 1 else {}
+            batch_info={'batch_size': len(self.selected_files), 'processed_in_batch': True} if len(self.selected_files) > 1 else {},
+            has_attention=has_attention,  
+            attention_details=attention_details  # Estrutura corrigida
         )
         
         self.processing_history.append(entry)
@@ -1651,23 +1886,36 @@ class MainWindow(QMainWindow):
         self.update_history_display()
         
         # Estatísticas finais
-        successful = sum(1 for entry in self.processing_history[-len(self.selected_files):] if entry.success)
+        recent_entries = self.processing_history[-len(self.selected_files):]
+        successful = sum(1 for entry in recent_entries if entry.success)
+        with_attention = sum(1 for entry in recent_entries if entry.has_attention)
         total = len(self.selected_files)
         
-        # Mostra resultado
+        # Mostra resultado (unificado para qualquer quantidade)
         if successful == total:
-            QMessageBox.information(
-                self,
-                "✅ Processamento Concluído",
-                f"Todos os {total} PDFs foram processados com sucesso!\n\n"
-                f"📊 Verifique o histórico para mais detalhes.\n"
-                f"📂 Os arquivos foram salvos na pasta DADOS/"
-            )
+            if with_attention > 0:
+                QMessageBox.information(
+                    self,
+                    "✅ Processamento Concluído com Atenção",
+                    f"{'Todos os' if total > 1 else 'O'} {total} PDF{'s foram' if total > 1 else ' foi'} processado{'s' if total > 1 else ''} com sucesso!\n\n"
+                    f"⚠️ {with_attention} arquivo{'s' if with_attention != 1 else ''} possui{'em' if with_attention != 1 else ''} observações especiais.\n\n"
+                    f"📊 Verifique o histórico para mais detalhes.\n"
+                    f"📂 {'Os arquivos foram salvos' if total > 1 else 'O arquivo foi salvo'} na pasta DADOS/"
+                )
+            else:
+                QMessageBox.information(
+                    self,
+                    "✅ Processamento Concluído",
+                    f"{'Todos os' if total > 1 else 'O'} {total} PDF{'s foram' if total > 1 else ' foi'} processado{'s' if total > 1 else ''} com sucesso!\n\n"
+                    f"📊 Verifique o histórico para mais detalhes.\n"
+                    f"📂 {'Os arquivos foram salvos' if total > 1 else 'O arquivo foi salvo'} na pasta DADOS/"
+                )
         elif successful > 0:
+            attention_text = f"\n⚠️ {with_attention} com observações especiais." if with_attention > 0 else ""
             QMessageBox.warning(
                 self,
                 "⚠️ Processamento Parcial",
-                f"{successful} de {total} PDFs foram processados com sucesso.\n\n"
+                f"{successful} de {total} PDFs foram processados com sucesso.{attention_text}\n\n"
                 f"📊 Verifique o histórico para detalhes dos arquivos que falharam.\n"
                 f"📂 Os arquivos processados foram salvos na pasta DADOS/"
             )
@@ -1703,19 +1951,23 @@ class MainWindow(QMainWindow):
             self.history_list.addItem(item)
             self.history_list.setItemWidget(item, item_widget)
         
-        # Atualiza status
+        # Atualiza status (simplificado, sem distinção de lote)
         total = len(self.processing_history)
         if total > 0:
             success_count = sum(1 for h in self.processing_history if h.success)
-            batch_count = sum(1 for h in self.processing_history if h.is_batch)
-            individual_count = total - batch_count
+            attention_count = sum(1 for h in self.processing_history if h.has_attention)
             
             status_text = f"{total} PDFs no histórico ({success_count} sucessos, {total - success_count} falhas)"
-            if batch_count > 0:
-                status_text += f" • {batch_count} de lotes, {individual_count} individuais"
+            if attention_count > 0:
+                status_text += f" • ⚠️ {attention_count} com atenção"
             
             self.history_status_label.setText(status_text)
-            self.history_status_label.setStyleSheet("color: #2cc985; font-weight: bold;")
+            
+            # Cor baseada na presença de atenções
+            if attention_count > 0:
+                self.history_status_label.setStyleSheet("color: #ff9800; font-weight: bold;")
+            else:
+                self.history_status_label.setStyleSheet("color: #2cc985; font-weight: bold;")
         else:
             self.history_status_label.setText("Nenhum PDF no histórico")
             self.history_status_label.setStyleSheet("color: #888;")
@@ -1785,7 +2037,7 @@ class MainWindow(QMainWindow):
         """Callback quando número de threads muda"""
         self.max_threads = int(value)
         self._on_config_changed()
-        self.add_log_message(f"Threads configuradas: {value} PDFs simultâneos")
+        self.add_log_message(f"Threads configuradas: {value} workers (sempre ThreadPoolExecutor)")
     
     def _on_config_changed(self):
         """Callback genérico para mudanças de configuração"""
@@ -1831,7 +2083,11 @@ class MainWindow(QMainWindow):
             self.processing_history = self.persistence.load_all_history_entries()
             self.update_history_display()
             
-            self.add_log_message(f"✅ Dados carregados: {len(self.processing_history)} entradas no histórico")
+            attention_count = sum(1 for h in self.processing_history if h.has_attention)
+            if attention_count > 0:
+                self.add_log_message(f"✅ Dados carregados: {len(self.processing_history)} entradas no histórico ({attention_count} com atenção)")
+            else:
+                self.add_log_message(f"✅ Dados carregados: {len(self.processing_history)} entradas no histórico")
             
         except Exception as e:
             self.add_log_message(f"⚠️ Erro ao carregar dados persistidos: {e}")
@@ -1969,8 +2225,10 @@ def main():
         window.show()
         
         # Adiciona logs de inicialização bem-sucedida
-        window.add_log_message("🚀 Aplicação PyQt6 v4.0 iniciada com sucesso!")
+        window.add_log_message("🚀 Aplicação PyQt6 v4.0.1 iniciada com sucesso!")
         window.add_log_message("💡 Interface moderna com performance nativa carregada")
+        window.add_log_message("⚡ Funcionalidades automáticas ativas")
+        window.add_log_message("🔧 Processamento unificado (sempre ThreadPoolExecutor) ativo")
         if is_frozen:
             window.add_log_message("📦 Executando em modo executável (.exe)")
         else:

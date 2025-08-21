@@ -17,6 +17,7 @@ Versão 4.0.1 - PROCESSAMENTO UNIFICADO:
 - Splash Screen profissional
 - Sistema de atenção para códigos duplicados (01003601 + 01003602)
 - NOVO: Processamento sempre via ThreadPoolExecutor (simplificação)
+- ATUALIZADO: Interface amigável para pontos de atenção (sem JSON)
 
 Funcionalidades v4.0.1:
 - Seleção múltipla de PDFs com interface otimizada
@@ -27,6 +28,7 @@ Funcionalidades v4.0.1:
 - Splash screen com progresso de carregamento
 - Sistema automático para duplicidades de PREMIO PROD. MENSAL
 - Arquitetura simplificada (sempre threads, zero inconsistência)
+- Exibição amigável de informações de atenção
 
 Dependências:
 pip install PyQt6
@@ -1157,7 +1159,7 @@ class HistoryDetailsDialog(QDialog):
                 titulo.setStyleSheet("color: #ff9800; font-weight: bold; font-size: 11px;")
                 attention_item_layout.addWidget(titulo)
                 
-                # Processa cada detalhe de atenção
+                # Processa cada detalhe de atenção de forma mais amigável
                 detalhes_list = detail.get('detalhes', [])
                 
                 # Se não há detalhes estruturados, mostra informação para dados antigos
@@ -1174,75 +1176,86 @@ class HistoryDetailsDialog(QDialog):
                 
                 for detalhe_raw in detalhes_list:
                     if isinstance(detalhe_raw, dict):
-                        # Informação estruturada
+                        # Usa o campo 'detalhes' quando disponível (mais amigável)
+                        descricao = detalhe_raw.get('descricao', '')
                         tipo = detalhe_raw.get('tipo', 'desconhecido')
+                        codigos = detalhe_raw.get('codigos', [])
                         
+                        # Título baseado no tipo
                         if tipo == 'soma_automatica':
-                            # Soma automática (PREMIO PROD, HE 100%, etc.)
-                            descricao = detalhe_raw.get('descricao', 'CÓDIGOS ESPECÍFICOS')
-                            codigos = detalhe_raw.get('codigos', [])
-                            valor_somado = detalhe_raw.get('valor_somado', 0)
-                            valores_individuais = detalhe_raw.get('valores_individuais', {})
-                            
-                            detalhe_label = QLabel(f"💡 SOMA AUTOMÁTICA - {descricao}")
-                            detalhe_label.setStyleSheet("color: #ffcc80; font-weight: bold; font-size: 10px; margin-left: 15px;")
-                            attention_item_layout.addWidget(detalhe_label)
-                            
-                            # Mostra códigos e valor final
-                            codigos_str = ' + '.join(codigos)
-                            codigos_label = QLabel(f"📋 {codigos_str} = {valor_somado}")
-                            codigos_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 25px;")
-                            attention_item_layout.addWidget(codigos_label)
-                            
-                            # Mostra valores individuais
-                            for codigo, valor in valores_individuais.items():
-                                valor_label = QLabel(f"   • {codigo}: {valor}")
-                                valor_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 35px;")
-                                attention_item_layout.addWidget(valor_label)
-                        
+                            titulo_tipo = "💡 SOMA AUTOMÁTICA"
                         elif tipo == 'duplicidade_descricao':
-                            # Duplicidade por descrição (descoberta automática)
-                            descricao = detalhe_raw.get('descricao', 'DESCRIÇÃO DESCONHECIDA')
-                            codigos = detalhe_raw.get('codigos', [])
-                            valores_individuais = detalhe_raw.get('valores_individuais', {})
-                            colunas = detalhe_raw.get('colunas_afetadas', [])
-                            
-                            detalhe_label = QLabel(f"🔍 DUPLICIDADE DETECTADA - {descricao}")
-                            detalhe_label.setStyleSheet("color: #ffcc80; font-weight: bold; font-size: 10px; margin-left: 15px;")
-                            attention_item_layout.addWidget(detalhe_label)
-                            
-                            # Mostra códigos
-                            codigos_str = ' + '.join(codigos)
-                            codigos_label = QLabel(f"📋 {codigos_str} (verificação manual recomendada)")
-                            codigos_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 25px;")
-                            attention_item_layout.addWidget(codigos_label)
-                            
-                            # Mostra colunas afetadas
-                            if colunas:
-                                colunas_label = QLabel(f"📊 Colunas: {', '.join(colunas)}")
-                                colunas_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 25px;")
-                                attention_item_layout.addWidget(colunas_label)
-                            
-                            # Mostra valores preservados individualmente  
-                            for codigo, valor in valores_individuais.items():
-                                valor_label = QLabel(f"   • {codigo}: {valor} (preservado)")
-                                valor_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 35px;")
-                                attention_item_layout.addWidget(valor_label)
-                        
+                            titulo_tipo = "🔍 DUPLICIDADE DETECTADA"
                         else:
-                            # Formato não reconhecido - mostra detalhes como texto
-                            detalhes_text = detalhe_raw.get('detalhes', str(detalhe_raw))
-                            detalhe_label = QLabel(f"💡 {detalhes_text}")
+                            titulo_tipo = "⚠️ ATENÇÃO"
+                        
+                        # Mostra título com descrição da verba
+                        if descricao:
+                            titulo_completo = f"{titulo_tipo} - {descricao}"
+                        else:
+                            titulo_completo = titulo_tipo
+                            
+                        titulo_label = QLabel(titulo_completo)
+                        titulo_label.setStyleSheet("color: #ffcc80; font-weight: bold; font-size: 10px; margin-left: 15px;")
+                        attention_item_layout.addWidget(titulo_label)
+                        
+                        # Mostra detalhes principais (limpos e amigáveis)
+                        if 'detalhes' in detalhe_raw:
+                            detalhes_clean = detalhe_raw['detalhes']
+                        elif 'detalhes_completo' in detalhe_raw:
+                            # Fallback para detalhes_completo se detalhes não existir
+                            detalhes_completo = detalhe_raw['detalhes_completo']
+                            detalhes_clean = detalhes_completo.replace('SOMA dos códigos ', '').replace('Códigos ', '')
+                        else:
+                            # Última tentativa - monta detalhes a partir dos códigos
+                            if codigos and len(codigos) > 1:
+                                detalhes_clean = f"{' + '.join(codigos)} (situação especial detectada)"
+                            else:
+                                detalhes_clean = "Situação especial detectada"
+                        
+                        detalhe_label = QLabel(f"📋 {detalhes_clean}")
+                        detalhe_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 25px;")
+                        detalhe_label.setWordWrap(True)
+                        attention_item_layout.addWidget(detalhe_label)
+                        
+                        # Se há códigos, mostra-os de forma limpa
+                        if codigos and len(codigos) > 1:
+                            codigos_label = QLabel(f"🔗 Códigos envolvidos: {' + '.join(codigos)}")
+                            codigos_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 25px;")
+                            attention_item_layout.addWidget(codigos_label)
+                        
+                        # Para soma automática, mostra valores individuais se disponíveis
+                        if tipo == 'soma_automatica' and 'valores_individuais' in detalhe_raw:
+                            valores_individuais = detalhe_raw.get('valores_individuais', {})
+                            if valores_individuais:
+                                valores_label = QLabel("📊 Valores individuais:")
+                                valores_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 25px; font-weight: bold;")
+                                attention_item_layout.addWidget(valores_label)
+                                
+                                for codigo, valor in valores_individuais.items():
+                                    valor_label = QLabel(f"   • {codigo}: {valor}")
+                                    valor_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 35px;")
+                                    attention_item_layout.addWidget(valor_label)
+                                    
+                        # Para duplicidade por descrição, indica que valores foram preservados
+                        elif tipo == 'duplicidade_descricao':
+                            preserv_label = QLabel("ℹ️ Valores preservados individualmente - verificação manual recomendada")
+                            preserv_label.setStyleSheet("color: #ffcc80; font-size: 9px; margin-left: 25px; font-style: italic;")
+                            attention_item_layout.addWidget(preserv_label)
+                    
+                    else:
+                        # String simples ou estrutura não reconhecida - compatibilidade com versões anteriores
+                        if isinstance(detalhe_raw, str):
+                            # String simples - usa diretamente
+                            detalhe_label = QLabel(f"💡 {detalhe_raw}")
                             detalhe_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 15px;")
                             detalhe_label.setWordWrap(True)
                             attention_item_layout.addWidget(detalhe_label)
-                    
-                    else:
-                        # String simples - compatibilidade com versões anteriores
-                        detalhe_label = QLabel(f"💡 {detalhe_raw}")
-                        detalhe_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 15px;")
-                        detalhe_label.setWordWrap(True)
-                        attention_item_layout.addWidget(detalhe_label)
+                        else:
+                            # Objeto não reconhecido - tenta extrair informação básica
+                            info_label = QLabel("⚠️ Situação especial detectada durante o processamento")
+                            info_label.setStyleSheet("color: #ffcc80; font-size: 10px; margin-left: 15px;")
+                            attention_item_layout.addWidget(info_label)
                 
                 attention_layout.addWidget(attention_item)
             

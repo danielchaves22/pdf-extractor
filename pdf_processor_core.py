@@ -13,6 +13,7 @@ Versão 3.2.2 - ATUALIZAÇÕES DE REGRAS:
 - NOVA REGRA: 01003601 + 01003602 = SOMA quando ambos no mesmo mês (ATENÇÃO)
 - Sistema de atenção para duplicidades de PREMIO PROD. MENSAL
 - Mapeamento corrigido conforme nova estrutura
+- ATUALIZADO: Interface amigável para pontos de atenção (sem JSON)
 
 Autor: Sistema de Extração Automatizada
 Data: 2025
@@ -72,6 +73,22 @@ class PDFProcessorCore:
         self.sumable_codes = {
             'X': ['01003601', '01003602'],  # PREMIO PROD. MENSAL - ambos vão para coluna X
             'Y': ['01007301', '01007302']   # HORAS EXT.100%-180 - ambos vão para coluna Y
+        }
+        
+        # Mapeamento de códigos para descrições amigáveis (para interface)
+        self.codigo_descricao_amigavel = {
+            '01003601': 'Prêmio de Produção Mensal',
+            '01003602': 'Prêmio de Produção Mensal',
+            '01017101': 'Prêmio de Produção (Rescisão)',
+            '01007301': 'Horas Extras 100%',
+            '01007302': 'Horas Extras 100%',
+            '01009001': 'Adicional Noturno 25%',
+            '01022001': 'Adicional Noturno 25% (Rescisão)',
+            '01003501': 'Horas Extras 75%',
+            '01007501': 'Horas Extras 75%',
+            '02007501': 'Diferença Provisória Horas Extras 75%',
+            '09090301': 'Salário Contribuição INSS',
+            '09090101': 'Remuneração Bruta'
         }
         
         # Planilha preferida
@@ -531,17 +548,21 @@ class PDFProcessorCore:
                 if not description:
                     description = "CÓDIGOS ESPECÍFICOS"
                 
+                # Usa descrição amigável se disponível
+                descricao_amigavel = self.codigo_descricao_amigavel.get(first_code, description)
+                
                 attention_key = f'duplicidade_{excel_column.lower()}'
                 attention_info[attention_key] = {
                     'codigos': codes_found_in_column,
                     'valores_individuais': codes_values,
                     'valor_somado': total_value,
-                    'detalhes': f"SOMA dos códigos {' + '.join(codes_found_in_column)} = {total_value} ({', '.join(valores_str)})",
+                    'detalhes': f"{' + '.join(codes_found_in_column)} = {total_value}",
+                    'detalhes_completo': f"SOMA dos códigos {' + '.join(codes_found_in_column)} = {total_value} ({', '.join(valores_str)})",
                     'tipo': 'soma_automatica',
-                    'descricao': description
+                    'descricao': descricao_amigavel
                 }
                 
-                self._log(f"ATENÇÃO: Duplicidade {description} detectada - {attention_info[attention_key]['detalhes']}", "WARNING")
+                self._log(f"ATENÇÃO: Duplicidade {descricao_amigavel} detectada - {attention_info[attention_key]['detalhes_completo']}", "WARNING")
                 
             elif len(codes_found_in_column) == 1:
                 # Apenas um código encontrado - comportamento normal
@@ -562,17 +583,22 @@ class PDFProcessorCore:
                         break
                 
                 if not already_handled:
+                    # Usa descrição amigável se disponível para o primeiro código
+                    first_code = codes_only[0] if codes_only else ''
+                    descricao_amigavel = self.codigo_descricao_amigavel.get(first_code, description)
+                    
                     attention_key = f'duplicidade_descricao_{len(attention_info)}'
                     attention_info[attention_key] = {
                         'codigos': codes_only,
-                        'descricao': description,
-                        'detalhes': f"Códigos {' + '.join(codes_only)} possuem descrição idêntica: '{description}' - verificação manual recomendada",
+                        'descricao': descricao_amigavel,
+                        'detalhes': f"{' + '.join(codes_only)} (verificação manual recomendada)",
+                        'detalhes_completo': f"Códigos {' + '.join(codes_only)} possuem descrição idêntica: '{descricao_amigavel}' - verificação manual recomendada",
                         'tipo': 'duplicidade_descricao',
                         'valores_individuais': {info[0]: info[1] for info in code_info_list},
                         'colunas_afetadas': list(set(info[2] for info in code_info_list))
                     }
                     
-                    self._log(f"ATENÇÃO: Duplicidade por descrição detectada - {attention_info[attention_key]['detalhes']}", "WARNING")
+                    self._log(f"ATENÇÃO: Duplicidade por descrição detectada - {attention_info[attention_key]['detalhes_completo']}", "WARNING")
         
         # Para 13 SALARIO, aplica fallback
         if folha_type == '13 SALARIO':

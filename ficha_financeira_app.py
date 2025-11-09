@@ -66,7 +66,7 @@ class FichaFinanceiraWindow(QMainWindow):
         layout.setSpacing(12)
 
         header = QLabel(
-            "Selecione o intervalo desejado e os PDFs da ficha financeira para gerar o PROVENTOS.csv."
+            "Selecione o intervalo desejado e os PDFs da ficha financeira para gerar os CSVs (PROVENTOS e ADIC. INSALUBRIDADE PAGO)."
         )
         header.setWordWrap(True)
         header.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -141,7 +141,7 @@ class FichaFinanceiraWindow(QMainWindow):
         self.output_label = QLabel("Nenhum processamento realizado ainda.")
         self.output_label.setWordWrap(True)
 
-        self.generate_button = QPushButton("Gerar PROVENTOS.csv")
+        self.generate_button = QPushButton("Gerar CSVs da Ficha")
         self.generate_button.clicked.connect(self._on_generate)
 
         box_layout.addWidget(self.output_label)
@@ -231,19 +231,38 @@ class FichaFinanceiraWindow(QMainWindow):
         self.add_log_message("🚧 Iniciando processamento da ficha financeira...")
 
         try:
-            result = self._processor.generate_proventos(
+            result = self._processor.generate_csvs(
                 self._pdf_paths,
                 start_period,
                 end_period,
                 output_dir,
             )
-            output_path = result["output_path"]
-            self.output_label.setText(f"Arquivo gerado: {output_path}")
+            outputs = result.get("outputs", [])
+            if outputs:
+                lines = [f"{item['label']}: {item['path']}" for item in outputs]
+                joined = "\n".join(lines)
+                self.output_label.setText(f"Arquivos gerados:\n{joined}")
+                for item in outputs:
+                    self.add_log_message(
+                        f"📁 {item['label']} salvo em {item['path']}"
+                    )
+            else:
+                self.output_label.setText("Nenhum arquivo foi gerado.")
             self.add_log_message("✅ Processamento concluído com sucesso.")
+
+            if outputs:
+                dialog_lines = [
+                    "Os arquivos foram gerados em:",
+                    *[f"• {item['label']}: {item['path']}" for item in outputs],
+                ]
+            else:
+                dialog_lines = [
+                    "Nenhum arquivo foi gerado para o período informado.",
+                ]
             QMessageBox.information(
                 self,
                 "Processamento concluído",
-                f"O arquivo foi gerado em:\n{output_path}",
+                "\n".join(dialog_lines),
             )
         except Exception as exc:  # noqa: BLE001
             self.add_log_message(f"❌ Erro durante o processamento: {exc}")

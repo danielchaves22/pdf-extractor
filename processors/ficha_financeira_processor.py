@@ -56,6 +56,15 @@ class FichaFinanceiraProcessor:
         "3123-Base": {"column": 2},
     }
 
+    OUTPUT_SPECS: Tuple[Dict[str, str], ...] = (
+        {"code": "3123-Base", "label": "PROVENTOS", "log": "PROVENTOS"},
+        {
+            "code": "8-Insalubridade",
+            "label": "ADIC. INSALUBRIDADE PAGO",
+            "log": "INSALUBRIDADE",
+        },
+    )
+
     MAX_BLOCK_CARRY = 3
 
     MONTH_MAP = {
@@ -91,9 +100,70 @@ class FichaFinanceiraProcessor:
     ) -> Dict[str, object]:
         """Processa PDFs e gera o arquivo PROVENTOS.csv."""
 
+        result = self.generate_csvs(
+            pdf_paths=pdf_paths,
+            start_period=start_period,
+            end_period=end_period,
+            output_dir=output_dir,
+        )
+
+        for output in result["outputs"]:
+            if output["label"] == "PROVENTOS":
+                return {
+                    "person_name": result["person_name"],
+                    "output_path": output["path"],
+                    "months": output["months"],
+                }
+
+        raise RuntimeError("Arquivo PROVENTOS não foi gerado.")
+
+    def generate_csvs(
+        self,
+        pdf_paths: Sequence[Path],
+        start_period: date,
+        end_period: date,
+        output_dir: Path,
+    ) -> Dict[str, object]:
+        """Gera todos os CSVs configurados para a ficha financeira."""
+
         if start_period > end_period:
             raise ValueError("Período inicial não pode ser maior que o final.")
 
+        aggregated, person_name = self._aggregate_pdfs(pdf_paths)
+
+        months_range = list(self._iterate_months(start_period, end_period))
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        file_slug = self._slugify_name(person_name)
+        outputs: List[Dict[str, object]] = []
+
+        for spec in self.OUTPUT_SPECS:
+            values = self._collect_values_for_code(
+                aggregated,
+                spec["code"],
+                months_range,
+                spec["log"],
+            )
+            output_path = output_dir / f"{spec['label']}_{file_slug}.csv"
+            self._write_output_csv(output_path, values)
+            self._log(f"✅ Arquivo gerado em {output_path}")
+            outputs.append({
+                "label": spec["label"],
+                "path": output_path,
+                "months": values,
+            })
+
+        return {
+            "person_name": person_name,
+            "outputs": outputs,
+        }
+
+    # ------------------------------------------------------------------
+    # Extração de dados
+    # ------------------------------------------------------------------
+    def _aggregate_pdfs(
+        self, pdf_paths: Sequence[Path]
+    ) -> Tuple[Dict[str, NumberByMonth], str]:
         if not pdf_paths:
             raise ValueError("Informe ao menos um PDF para processamento.")
 
@@ -131,35 +201,11 @@ class FichaFinanceiraProcessor:
                     target[key] = value
 
         if not person_name:
-            person_name = pdf_paths[0].stem
+            person_name = Path(pdf_paths[0]).stem
             self._log("⚠️ Nome não encontrado no PDF. Usando nome do arquivo.")
 
-        months = list(self._iterate_months(start_period, end_period))
+        return aggregated, person_name
 
-        proventos_values: List[Tuple[int, int, Decimal]] = []
-        for year, month in months:
-            value = aggregated.get("3123-Base", {}).get((year, month), Decimal("0"))
-            proventos_values.append((year, month, value))
-            self._log(
-                f"🧮 Mês {month:02d}/{year}: {self._format_decimal(value)} extraído para PROVENTOS."
-            )
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        file_slug = self._slugify_name(person_name)
-        output_path = output_dir / f"PROVENTOS_{file_slug}.csv"
-        self._write_proventos_csv(output_path, proventos_values)
-
-        self._log(f"✅ Arquivo gerado em {output_path}")
-
-        return {
-            "person_name": person_name,
-            "output_path": output_path,
-            "months": proventos_values,
-        }
-
-    # ------------------------------------------------------------------
-    # Extração de dados
-    # ------------------------------------------------------------------
     def _parse_pdf(self, pdf_path: Path) -> Dict[str, object]:
         values: Dict[str, NumberByMonth] = {
             key: {} for key in self.TARGET_CODES.keys()
@@ -472,7 +518,25 @@ class FichaFinanceiraProcessor:
     # ------------------------------------------------------------------
     # Utilidades
     # ------------------------------------------------------------------
-    def _write_proventos_csv(
+    def _collect_values_for_code(
+        self,
+        aggregated: Dict[str, NumberByMonth],
+        code: str,
+        months: Iterable[Tuple[int, int]],
+        log_label: str,
+    ) -> List[Tuple[int, int, Decimal]]:
+        results: List[Tuple[int, int, Decimal]] = []
+
+        for year, month in months:
+            value = aggregated.get(code, {}).get((year, month), Decimal("0"))
+            results.append((year, month, value))
+            self._log(
+                f"🧮 Mês {month:02d}/{year}: {self._format_decimal(value)} extraído para {log_label}."
+            )
+
+        return results
+
+    def _write_output_csv(
         self, output_path: Path, months: Iterable[Tuple[int, int, Decimal]]
     ) -> None:
         header = [

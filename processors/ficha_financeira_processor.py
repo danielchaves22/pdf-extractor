@@ -132,9 +132,15 @@ class FichaFinanceiraProcessor:
         aggregated, person_name = self._aggregate_pdfs(pdf_paths)
 
         months_range = list(self._iterate_months(start_period, end_period))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir_path = Path(output_dir)
+        output_dir_path.mkdir(parents=True, exist_ok=True)
 
-        file_slug = self._slugify_name(person_name)
+        folder_slug = self._slugify_name(person_name)
+        period_folder = f"{start_period.year:04d}_{start_period.month:02d}_a_{end_period.year:04d}_{end_period.month:02d}"
+
+        target_dir = output_dir_path / folder_slug / period_folder
+        target_dir.mkdir(parents=True, exist_ok=True)
+
         outputs: List[Dict[str, object]] = []
 
         for spec in self.OUTPUT_SPECS:
@@ -144,7 +150,7 @@ class FichaFinanceiraProcessor:
                 months_range,
                 spec["log"],
             )
-            output_path = output_dir / f"{spec['label']}_{file_slug}.csv"
+            output_path = target_dir / f"{spec['label']}_{folder_slug}.csv"
             self._write_output_csv(output_path, values)
             self._log(f"✅ Arquivo gerado em {output_path}")
             outputs.append({
@@ -155,6 +161,7 @@ class FichaFinanceiraProcessor:
 
         return {
             "person_name": person_name,
+            "output_folder": target_dir,
             "outputs": outputs,
         }
 

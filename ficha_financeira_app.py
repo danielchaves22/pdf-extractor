@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QTextCursor
 from PyQt6.QtWidgets import (
     QFileDialog,
     QGroupBox,
@@ -46,7 +47,7 @@ class FichaFinanceiraWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Ficha Financeira - Importador de CSVs")
+        self.setWindowTitle("Ficha Financeira - Geração de CSVs")
         self.setFixedSize(750, 560)
 
         self._pdf_paths: List[Path] = []
@@ -259,5 +260,5 @@ class FichaFinanceiraWindow(QMainWindow):
     # ------------------------------------------------------------------
     def add_log_message(self, message: str) -> None:
         self.log_output.append(message)
-        self.log_output.moveCursor(self.log_output.textCursor().End)
+        self.log_output.moveCursor(QTextCursor.MoveOperation.End)
 

@@ -38,6 +38,14 @@ class MonthBlock:
     y_end: float
 
 
+@dataclass
+class ActiveBlock:
+    """Representa um bloco que pode se estender para a próxima página."""
+
+    block: MonthBlock
+    carry_count: int = 0
+
+
 class FichaFinanceiraProcessor:
     """Responsável por extrair dados da ficha financeira e gerar CSVs."""
 
@@ -47,6 +55,8 @@ class FichaFinanceiraProcessor:
         "8-Insalubridade": {"column": 2},
         "3123-Base": {"column": 2},
     }
+
+    MAX_BLOCK_CARRY = 3
 
     MONTH_MAP = {
         "janeiro": 1,
@@ -160,24 +170,81 @@ class FichaFinanceiraProcessor:
             if pdf.pages:
                 person_name = self._extract_person_name(pdf.pages[0])
 
+            pending_blocks: List[ActiveBlock] = []
+            last_comp_centers: List[float] = []
+            last_valor_centers: List[float] = []
+
             for page_index, page in enumerate(pdf.pages):
                 words = page.extract_words(use_text_flow=True, keep_blank_chars=False)
                 if not words:
                     continue
 
                 comp_centers, valor_centers = self._extract_column_centers(words)
-                blocks = self._extract_month_blocks(
+                if comp_centers:
+                    last_comp_centers = list(comp_centers)
+                else:
+                    comp_centers = list(last_comp_centers)
+
+                if valor_centers:
+                    last_valor_centers = list(valor_centers)
+                else:
+                    valor_centers = list(last_valor_centers)
+                extracted_blocks = self._extract_month_blocks(
                     words, page.height, comp_centers, valor_centers
                 )
 
-                for block in blocks:
+                active_blocks: List[Tuple[MonthBlock, ActiveBlock]] = []
+
+                next_block_start = (
+                    min(block.y_start for block in extracted_blocks)
+                    if extracted_blocks
+                    else page.height
+                )
+
+                for active in pending_blocks:
+                    carry_block = MonthBlock(
+                        year=active.block.year,
+                        months=list(active.block.months),
+                        y_start=0,
+                        y_end=max(0, min(next_block_start - 0.5, page.height)),
+                    )
+                    active_blocks.append((carry_block, active))
+
+                for block in extracted_blocks:
+                    active_blocks.append(
+                        (
+                            block,
+                            ActiveBlock(
+                                block=MonthBlock(
+                                    year=block.year,
+                                    months=list(block.months),
+                                    y_start=block.y_start,
+                                    y_end=block.y_end,
+                                )
+                            ),
+                        )
+                    )
+
+                next_pending: List[ActiveBlock] = []
+
+                for block, state in active_blocks:
+                    block_has_values = False
+
                     for prefix, cfg in self.TARGET_CODES.items():
                         column_index = int(cfg["column"])
                         occurrences = self._find_row_occurrences(words, prefix, block)
+                        if not occurrences:
+                            continue
+
                         for row_words in occurrences:
                             extracted = self._extract_values_from_row(
                                 row_words, block, column_index
                             )
+                            if not extracted:
+                                continue
+
+                            block_has_values = True
+
                             target = values.setdefault(prefix, {})
                             for month_key, amount in extracted.items():
                                 existing = target.get(month_key)
@@ -186,6 +253,22 @@ class FichaFinanceiraProcessor:
                                         f"⚠️ Valores conflitantes para {prefix} em {month_key[1]:02d}/{month_key[0]} (substituindo {existing} por {amount})."
                                     )
                                 target[month_key] = amount
+
+                    if not block_has_values:
+                        next_count = state.carry_count + 1
+                        if next_count <= self.MAX_BLOCK_CARRY:
+                            next_pending.append(
+                                ActiveBlock(block=state.block, carry_count=next_count)
+                            )
+                        else:
+                            months_label = ", ".join(
+                                f"{month.month:02d}" for month in state.block.months
+                            )
+                            self._log(
+                                f"⚠️ Cabeçalho {state.block.year} ({months_label}) não apresentou valores após {self.MAX_BLOCK_CARRY} páginas."
+                            )
+
+                pending_blocks = next_pending
 
         return {"values": values, "person_name": person_name}
 

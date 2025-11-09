@@ -137,6 +137,12 @@ C:/trabalho/folhas_pagamento/     ← MODELO_DIR
     └── PESSOA3.xlsm
 ```
 
+## 🔀 Seleção de módulos
+
+- Após o splash screen, escolha entre **Recibo Modelo 1** (fluxo tradicional com Excel) ou **Ficha Financeira** (geração de CSVs).
+- O módulo de ficha financeira solicita o período desejado, os PDFs a serem processados e salva o `PROVENTOS.csv` automaticamente na pasta do primeiro arquivo.
+- Cada módulo possui telas específicas, mantendo a rotina original intocada.
+
 ## 💻 Como Usar v4.0
 
 ### 🎯 Interface Gráfica PyQt6 v4.0 (Recomendada)

@@ -201,14 +201,72 @@ class SplashScreen(QSplashScreen):
         self.showMessage(display_message, Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, color)
         QApplication.processEvents()  # Força atualização imediata
     
-    def finish_loading(self, main_window):
-        """Finaliza carregamento e mostra janela principal"""
+    def finish_loading(self, main_window=None):
+        """Finaliza carregamento e, se informado, abre a janela principal."""
         self.showMessage("100% - Aplicação pronta! Abrindo...", Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignBottom, QColor("#2cc985"))
         QApplication.processEvents()
-        
-        # Pequena pausa para mostrar "100%" e mensagem final
-        QTimer.singleShot(500, lambda: self.finish(main_window))
 
+        def _finalize():
+            if main_window is not None:
+                self.finish(main_window)
+            else:
+                self.close()
+
+        # Pequena pausa para mostrar "100%" e mensagem final
+        QTimer.singleShot(500, _finalize)
+
+
+
+
+class ModuleSelectionDialog(QDialog):
+    """Dialogo para escolher o módulo de importação."""
+
+    RECIBO_MODELO_1 = "recibo_modelo_1"
+    FICHA_FINANCEIRA = "ficha_financeira"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Selecione o módulo de processamento")
+        self.setModal(True)
+        self.selected_module = None
+
+        layout = QVBoxLayout(self)
+        title = QLabel("Escolha qual rotina deseja utilizar:")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        description = QLabel(
+            "• Recibo Modelo 1: mantém o fluxo atual de geração do Excel.\n"
+            "• Ficha Financeira: gera arquivos CSV, iniciando pelo PROVENTOS.csv."
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        buttons_layout = QHBoxLayout()
+        modelo_button = QPushButton("Recibo Modelo 1")
+        modelo_button.clicked.connect(lambda: self._select(self.RECIBO_MODELO_1))
+        ficha_button = QPushButton("Ficha Financeira")
+        ficha_button.clicked.connect(lambda: self._select(self.FICHA_FINANCEIRA))
+
+        buttons_layout.addWidget(modelo_button)
+        buttons_layout.addWidget(ficha_button)
+        layout.addLayout(buttons_layout)
+
+        cancel_button = QPushButton("Cancelar")
+        cancel_button.clicked.connect(self.reject)
+        layout.addWidget(cancel_button)
+
+    def _select(self, module_key: str) -> None:
+        self.selected_module = module_key
+        self.accept()
+
+    @classmethod
+    def choose(cls, parent=None) -> Optional[str]:
+        dialog = cls(parent)
+        result = dialog.exec()
+        if result == QDialog.DialogCode.Accepted:
+            return dialog.selected_module
+        return None
 # Estilo escuro moderno
 DARK_STYLE = """
 QMainWindow {
@@ -2185,57 +2243,60 @@ def main():
         splash.set_status("Criando interface...")
         app.processEvents()
         time.sleep(0.3 if is_frozen else 0.2)
-        
-        # Cria janela principal
+
         splash.set_status("Inicializando PyQt6...")
         app.processEvents()
-        
-        # Cria window
-        window = MainWindow()
-        
-        splash.set_status("Configurando sistema...")
-        app.processEvents()
-        time.sleep(0.2 if is_frozen else 0.1)
-        
-        splash.set_status("Preparando interface...")
-        app.processEvents()
-        time.sleep(0.2)
-        
+
         # Aguarda até splash screen chegar a pelo menos 80%
         while splash.progress_value < 80:
             app.processEvents()
             time.sleep(0.02)
-        
+
         splash.set_status("Carregando dados...")
         app.processEvents()
         time.sleep(0.2 if is_frozen else 0.1)
-        
+
         # Aguarda carregamento completo
         while splash.progress_value < 100:
             app.processEvents()
             time.sleep(0.02)
-        
-        # Finaliza splash e mostra janela principal
-        splash.set_status("✅ Pronto! Abrindo...")
+
+        splash.set_status("✅ Carregamento concluído")
         app.processEvents()
         time.sleep(0.3)
-        
-        # Fecha splash e mostra janela principal
-        splash.finish_loading(window)
+
+        splash.finish_loading()
+
+        module_choice = ModuleSelectionDialog.choose()
+        if module_choice is None:
+            sys.exit(0)
+
+        if module_choice == ModuleSelectionDialog.FICHA_FINANCEIRA:
+            from ficha_financeira_app import FichaFinanceiraWindow
+
+            window = FichaFinanceiraWindow()
+        else:
+            window = MainWindow()
+
         window.show()
-        
-        # Adiciona logs de inicialização bem-sucedida
-        window.add_log_message("🚀 Aplicação PyQt6 v4.0.1 iniciada com sucesso!")
-        window.add_log_message("💡 Interface moderna com performance nativa carregada")
-        window.add_log_message("⚡ Funcionalidades automáticas ativas")
-        window.add_log_message("🔧 Processamento unificado (sempre ThreadPoolExecutor) ativo")
+
+        if module_choice == ModuleSelectionDialog.FICHA_FINANCEIRA:
+            window.add_log_message("🚀 Módulo Ficha Financeira pronto para gerar CSVs.")
+            window.add_log_message("📄 Informe o período e escolha os PDFs para montar o PROVENTOS.csv.")
+        else:
+            window.add_log_message("🚀 Aplicação PyQt6 v4.0.1 iniciada com sucesso!")
+            window.add_log_message("💡 Interface moderna com performance nativa carregada")
+            window.add_log_message("⚡ Funcionalidades automáticas ativas")
+            window.add_log_message("🔧 Processamento unificado (sempre ThreadPoolExecutor) ativo")
+
         if is_frozen:
             window.add_log_message("📦 Executando em modo executável (.exe)")
         else:
             window.add_log_message("🛠️ Executando em modo desenvolvimento")
-        
+
         sys.exit(app.exec())
-        
+
+       
     except Exception as e:
         # Tratamento de erro crítico
         try:

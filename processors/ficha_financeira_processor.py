@@ -459,11 +459,14 @@ class FichaFinanceiraProcessor:
             row_top = max(block.y_start, word["top"] - y_margin)
             row_bottom = min(block.y_end, word["bottom"] + y_margin)
             min_x = word["x0"] - x_margin
+            line_key = self._word_line_key(word)
 
             row_words: List[Dict[str, object]] = []
             for candidate in words:
-                candidate_center = (candidate["top"] + candidate["bottom"]) / 2
-                if not (row_top <= candidate_center <= row_bottom):
+                if self._word_line_key(candidate) != line_key:
+                    continue
+
+                if candidate["bottom"] < row_top or candidate["top"] > row_bottom:
                     continue
 
                 if candidate["x1"] < min_x:
@@ -471,10 +474,30 @@ class FichaFinanceiraProcessor:
 
                 row_words.append(candidate)
 
+            row_words.sort(key=lambda item: (item["x0"], item["x1"]))
+
             if row_words:
                 rows.append(row_words)
 
         return rows
+
+    def _word_line_key(self, word: Dict[str, object]) -> Tuple[str, int, Optional[int]]:
+        line_number = word.get("line_number")
+        if isinstance(line_number, int):
+            return ("line", line_number, None)
+
+        doctop = word.get("doctop")
+        if doctop is not None:
+            scaled = int(round(float(doctop) * 10))
+            return ("doctop", scaled, None)
+
+        top = word.get("top")
+        bottom = word.get("bottom")
+        return (
+            "bounds",
+            int(round(float(top or 0) * 10)),
+            int(round(float(bottom or 0) * 10)),
+        )
 
     def _normalize_code_text(self, text: str) -> str:
         cleaned = unicodedata.normalize("NFKD", text or "").replace("\xa0", " ")

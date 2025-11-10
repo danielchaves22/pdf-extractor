@@ -384,9 +384,11 @@ class FichaFinanceiraProcessor:
         rows: List[List[Dict[str, object]]] = []
         tolerance = 0.8
 
+        normalized_prefix = self._normalize_code_text(prefix)
+
         for word in words:
             text = word.get("text", "")
-            if not text.startswith(prefix):
+            if not self._normalize_code_text(text).startswith(normalized_prefix):
                 continue
 
             row_center = (word["top"] + word["bottom"]) / 2
@@ -402,6 +404,11 @@ class FichaFinanceiraProcessor:
             rows.append(row_words)
 
         return rows
+
+    def _normalize_code_text(self, text: str) -> str:
+        cleaned = unicodedata.normalize("NFKD", text or "").replace("\xa0", " ")
+        cleaned = cleaned.replace("‑", "-").replace("–", "-")
+        return re.sub(r"\s+", "", cleaned)
 
     def _extract_values_from_row(
         self, row_words: List[Dict[str, object]], block: MonthBlock, column: int

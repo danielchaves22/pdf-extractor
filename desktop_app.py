@@ -1737,7 +1737,6 @@ class MainWindow(QMainWindow):
         self.project = project
         self.on_back_callback = on_back
         self.project_model = project.model
-        self._returning_to_projects = False
 
         if self.project_model == ProjectManager.MODEL_RECIBO:
             window_title = f"Recibo Modelo 1 • {self.project.name}"
@@ -1803,94 +1802,93 @@ class MainWindow(QMainWindow):
         self.create_processing_tab()
         self.create_history_tab()
         self.create_settings_tab()
-        
+
         # Status bar
         self.statusBar().showMessage("Sistema iniciado - v4.0.1 PyQt6")
-    
+
+    def _format_project_header(self) -> str:
+        model_name = (
+            "Recibo Modelo 1" if self.project_model == ProjectManager.MODEL_RECIBO else "Ficha Financeira"
+        )
+        return f"{self.project.name} • {model_name}"
+
     def create_header(self, layout):
         """Cria header da aplicação com dados do projeto."""
         header_frame = QFrame()
         header_layout = QVBoxLayout(header_frame)
         header_layout.setSpacing(6)
+        header_layout.setContentsMargins(0, 0, 0, 0)
 
-        if self.project_model == ProjectManager.MODEL_RECIBO:
-            title_text = "📄 Processamento de Folha de Pagamento"
-            subtitle_text = "Recibo Modelo 1 - Conversão para Excel"
-        else:
-            title_text = "📄 Ficha Financeira"
-            subtitle_text = "Geração de CSVs por período"
+        self.project_header_label = QLabel(self._format_project_header())
+        self.project_header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.project_header_label.setStyleSheet("font-size: 16px; font-weight: 600; padding: 4px;")
 
-        title = QLabel(title_text)
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title.setStyleSheet("font-size: 22px; font-weight: bold; padding: 6px;")
-
-        context_label = QLabel(subtitle_text)
-        context_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        context_label.setStyleSheet("font-size: 12px; color: #aaa;")
-
-        self.project_subtitle_label = QLabel(f"Projeto: {self.project.name}")
-        self.project_subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.project_subtitle_label.setStyleSheet("font-size: 11px; color: #888;")
-
-        header_layout.addWidget(title)
-        header_layout.addWidget(context_label)
-        header_layout.addWidget(self.project_subtitle_label)
+        header_layout.addWidget(self.project_header_label)
 
         project_box = QGroupBox("📁 Projeto ativo")
         project_layout = QVBoxLayout(project_box)
-        project_layout.setSpacing(6)
+        project_layout.setSpacing(8)
+        project_layout.setContentsMargins(12, 8, 12, 12)
 
-        form_layout = QFormLayout()
-        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        form_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        top_row = QHBoxLayout()
+        top_row.setSpacing(12)
+
+        name_label = QLabel("Nome do projeto:")
+        top_row.addWidget(name_label)
 
         self.project_name_edit = QLineEdit(self.project.name)
         self.project_name_edit.textChanged.connect(self._mark_project_dirty)
-        form_layout.addRow("Nome do projeto:", self.project_name_edit)
+        top_row.addWidget(self.project_name_edit, 1)
 
-        model_label = QLabel("Recibo Modelo 1" if self.project_model == ProjectManager.MODEL_RECIBO else "Ficha Financeira")
-        model_label.setStyleSheet("color: #ccc;")
-        form_layout.addRow("Modelo:", model_label)
+        model_text_label = QLabel("Modelo:")
+        top_row.addWidget(model_text_label)
 
-        # Período do projeto
-        period_widget_start = QHBoxLayout()
+        self.model_value_label = QLabel(
+            "Recibo Modelo 1" if self.project_model == ProjectManager.MODEL_RECIBO else "Ficha Financeira"
+        )
+        self.model_value_label.setStyleSheet("color: #ccc;")
+        top_row.addWidget(self.model_value_label)
+
+        top_row.addStretch()
+        project_layout.addLayout(top_row)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(12)
+
+        start_label = QLabel("Início do período:")
+        bottom_row.addWidget(start_label)
+
+        start_period_layout = QHBoxLayout()
+        start_period_layout.setSpacing(6)
         self.start_month_combo = QComboBox()
         self.start_month_combo.addItems(MONTH_NAMES)
         self.start_year_spin = QSpinBox()
         self.start_year_spin.setRange(1990, 2100)
+        start_period_layout.addWidget(self.start_month_combo)
+        start_period_layout.addWidget(self.start_year_spin)
+        bottom_row.addLayout(start_period_layout)
 
-        period_widget_start.addWidget(self.start_month_combo)
-        period_widget_start.addWidget(self.start_year_spin)
+        end_label = QLabel("Fim do período:")
+        bottom_row.addWidget(end_label)
 
-        period_widget_end = QHBoxLayout()
+        end_period_layout = QHBoxLayout()
+        end_period_layout.setSpacing(6)
         self.end_month_combo = QComboBox()
         self.end_month_combo.addItems(MONTH_NAMES)
         self.end_year_spin = QSpinBox()
         self.end_year_spin.setRange(1990, 2100)
+        end_period_layout.addWidget(self.end_month_combo)
+        end_period_layout.addWidget(self.end_year_spin)
+        bottom_row.addLayout(end_period_layout)
 
-        period_widget_end.addWidget(self.end_month_combo)
-        period_widget_end.addWidget(self.end_year_spin)
-
-        form_layout.addRow("Início do período:", period_widget_start)
-        form_layout.addRow("Fim do período:", period_widget_end)
-
-        project_layout.addLayout(form_layout)
-
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(8)
+        bottom_row.addStretch()
 
         self.save_project_button = QPushButton("💾 Salvar projeto")
         self.save_project_button.setEnabled(False)
         self.save_project_button.clicked.connect(self.save_project_changes)
+        bottom_row.addWidget(self.save_project_button)
 
-        self.back_button = QPushButton("⬅️ Voltar aos projetos")
-        self.back_button.clicked.connect(self.handle_back_to_projects)
-
-        buttons_layout.addWidget(self.save_project_button)
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(self.back_button)
-
-        project_layout.addLayout(buttons_layout)
+        project_layout.addLayout(bottom_row)
 
         header_layout.addWidget(project_box)
 
@@ -1955,7 +1953,7 @@ class MainWindow(QMainWindow):
 
             self.project = updated
             self.save_project_button.setEnabled(False)
-            self.project_subtitle_label.setText(f"Projeto: {self.project.name}")
+            self.project_header_label.setText(self._format_project_header())
 
             if self.project_model == ProjectManager.MODEL_RECIBO:
                 self.setWindowTitle(f"Recibo Modelo 1 • {self.project.name}")
@@ -1970,18 +1968,6 @@ class MainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.warning(self, "Não foi possível salvar", str(exc))
 
-    def handle_back_to_projects(self):
-        if self.processing:
-            QMessageBox.warning(
-                self,
-                "Processamento em andamento",
-                "Finalize ou cancele o processamento antes de voltar para a lista de projetos.",
-            )
-            return
-
-        self._returning_to_projects = True
-        self.close()
-    
     def create_processing_tab(self):
         """Cria aba de processamento"""
         processing_widget = QWidget()
@@ -2790,7 +2776,7 @@ class MainWindow(QMainWindow):
         self.save_current_config()
         event.accept()
 
-        if self._returning_to_projects and self.on_back_callback:
+        if self.on_back_callback:
             QTimer.singleShot(0, self.on_back_callback)
 
 

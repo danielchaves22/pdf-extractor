@@ -1,6 +1,6 @@
 # 📄 Módulo "Ficha Financeira"
 
-Este módulo processa as fichas financeiras quadrimestrais e gera arquivos CSV padronizados. A implementação atual cria dois arquivos (`PROVENTOS.csv` e `ADIC. INSALUBRIDADE PAGO.csv`), ambos seguindo os exemplos disponíveis na pasta `NOVO_MODULO_FICHA_FINANCEIRA`.
+Este módulo processa as fichas financeiras quadrimestrais e gera arquivos CSV padronizados. A implementação atual cria três arquivos (`PROVENTOS.csv`, `ADIC. INSALUBRIDADE PAGO.csv` e `CARTÕES.csv`), seguindo os exemplos disponíveis na pasta `NOVO_MODULO_FICHA_FINANCEIRA`.
 
 ## 🧭 Fluxo de uso na interface desktop
 
@@ -17,18 +17,21 @@ A janela mantém um painel de logs para acompanhar o andamento da extração.
 - Os valores são extraídos pela posição das colunas `Comp.` e `Valor` identificadas no PDF. A rotina reconhece automaticamente as colunas, mesmo quando determinados campos estão vazios.
 - Para o `PROVENTOS.csv`, são coletados os valores da verba **`3123 - Base INSS (Folha)`** na coluna `Valor`. Se o mês estiver ausente no PDF, o resultado é preenchido com `0`.
 - Para o `ADIC. INSALUBRIDADE PAGO.csv`, são utilizados os valores da verba **`8 - Insalubridade`** na coluna `Valor`, seguindo a mesma regra de preenchimento com `0` para meses não encontrados.
+- Para o `CARTÕES.csv`, são utilizados os valores da verba **`6 - Horas Extras 50%`** na coluna `Comp.`. Meses que não apresentarem essa verba são preenchidos com `0`.
 - Meses fora do intervalo solicitado são descartados, mesmo que existam no documento.
 - As colunas `FGTS`, `FGTS_REC.`, `CONTRIBUICAO_SOCIAL` e `CONTRIBUICAO_SOCIAL_REC.` são preenchidas com `N`, conforme especificação.
 
 ## 🗂️ Estrutura dos arquivos gerados
 
-Cada arquivo segue o padrão de separador `;` e contém dez colunas:
+Os arquivos `PROVENTOS.csv` e `ADIC. INSALUBRIDADE PAGO.csv` seguem o padrão de separador `;` e contêm dez colunas:
 
 ```
 MES_ANO;VALOR;FGTS;FGTS_REC.;CONTRIBUICAO_SOCIAL;CONTRIBUICAO_SOCIAL_REC.;;;;
 ```
 
 Cada linha representa um mês no formato `MM/AAAA`, com os valores convertidos para vírgula como separador decimal.
+
+O arquivo `CARTÕES.csv` possui apenas duas colunas (`PERIODO` e `HORAS EXTRAS`), usando o mesmo separador `;`.
 
 ## 🔁 Reutilização futura
 

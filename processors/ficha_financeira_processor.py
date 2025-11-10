@@ -149,9 +149,8 @@ class FichaFinanceiraProcessor:
         output_dir_path.mkdir(parents=True, exist_ok=True)
 
         folder_slug = self._slugify_name(person_name)
-        period_folder = f"{start_period.year:04d}_{start_period.month:02d}_a_{end_period.year:04d}_{end_period.month:02d}"
 
-        target_dir = output_dir_path / folder_slug / period_folder
+        target_dir = output_dir_path / folder_slug
         target_dir.mkdir(parents=True, exist_ok=True)
 
         outputs: List[Dict[str, object]] = []

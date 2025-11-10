@@ -54,6 +54,7 @@ class FichaFinanceiraProcessor:
     TARGET_CODES: Dict[str, Dict[str, object]] = {
         "1-Salario": {"column": 1},
         "6-Horas": {"column": 1, "search_prefix": "6 -"},
+        "14-Horas100": {"column": 1, "search_prefix": "14 -"},
         "8-Insalubridade": {"column": 2},
         "205-Insalubridade-ACS": {
             "column": 2,
@@ -81,6 +82,8 @@ class FichaFinanceiraProcessor:
             "label": "CARTÕES",
             "log": "CARTÕES",
             "writer": "cartoes",
+            "extra_hours_code": "14-Horas100",
+            "extra_hours_log": "CARTÕES - HORA EXTRA 100",
         },
     )
 
@@ -180,17 +183,35 @@ class FichaFinanceiraProcessor:
         outputs: List[Dict[str, object]] = []
 
         for spec in self.OUTPUT_SPECS:
-            values = self._collect_values_for_code(
-                aggregated,
-                spec["code"],
-                months_range,
-                spec["log"],
-            )
             output_path = target_dir / f"{spec['label']}_{folder_slug}.csv"
             writer = spec.get("writer", "default")
             if writer == "cartoes":
-                self._write_cartoes_csv(output_path, values)
+                values = self._collect_values_for_code(
+                    aggregated,
+                    spec["code"],
+                    months_range,
+                    spec["log"],
+                )
+                extra_code = spec.get("extra_hours_code")
+                extra_log = spec.get("extra_hours_log", spec["log"])
+                extra_values = (
+                    self._collect_values_for_code(
+                        aggregated,
+                        extra_code,
+                        months_range,
+                        extra_log,
+                    )
+                    if extra_code
+                    else []
+                )
+                self._write_cartoes_csv(output_path, months_range, values, extra_values)
             else:
+                values = self._collect_values_for_code(
+                    aggregated,
+                    spec["code"],
+                    months_range,
+                    spec["log"],
+                )
                 self._write_output_csv(output_path, values)
             self._log(f"✅ Arquivo gerado em {output_path}")
             outputs.append({
@@ -696,18 +717,46 @@ class FichaFinanceiraProcessor:
                 )
 
     def _write_cartoes_csv(
-        self, output_path: Path, months: Iterable[Tuple[int, int, Decimal]]
+        self,
+        output_path: Path,
+        months: Iterable[Tuple[int, int]],
+        horas_50: Iterable[Tuple[int, int, Decimal]],
+        horas_100: Iterable[Tuple[int, int, Decimal]],
     ) -> None:
-        header = ["PERIODO", "HORAS EXTRAS"]
+        header = ["PERIODO", "HORA EXTRA 50", "HORA EXTRA 100"]
+
+        horas_50_map = {
+            (year, month): value for year, month, value in horas_50
+        }
+        horas_100_map = {
+            (year, month): value for year, month, value in horas_100
+        }
+
+        ordered_months: List[Tuple[int, int]] = list(months)
+
+        missing_months = [
+            key
+            for key in horas_100_map.keys()
+            if key not in horas_50_map and key not in ordered_months
+        ]
+        if missing_months:
+            ordered_months.extend(sorted(missing_months))
 
         with output_path.open("w", newline="", encoding="utf-8") as csv_file:
             writer = csv.writer(csv_file, delimiter=";", lineterminator="\n")
             writer.writerow(header)
 
-            for year, month, value in months:
+            for year, month in ordered_months:
                 mes_ano = f"{month:02d}/{year}"
-                formatted = self._format_decimal(value)
-                writer.writerow([mes_ano, formatted])
+                valor_50 = horas_50_map.get((year, month), Decimal("0"))
+                valor_100 = horas_100_map.get((year, month), Decimal("0"))
+                writer.writerow(
+                    [
+                        mes_ano,
+                        self._format_decimal(valor_50),
+                        self._format_decimal(valor_100),
+                    ]
+                )
 
     def _iterate_months(self, start: date, end: date) -> Iterable[Tuple[int, int]]:
         current_year = start.year

@@ -123,13 +123,27 @@ class SplashScreen(QSplashScreen):
         painter.setPen(QColor("#ffffff"))
         title_font = QFont("Arial", 22, QFont.Weight.Bold)
         painter.setFont(title_font)
-        painter.drawText(20, 50, width-40, 40, Qt.AlignmentFlag.AlignCenter, "📄 Processamento de Folha")
-        
+        painter.drawText(
+            20,
+            50,
+            width - 40,
+            40,
+            Qt.AlignmentFlag.AlignCenter,
+            "Zenit Calc - Levantamento de Dados",
+        )
+
         # Subtítulo (com espaçamento aumentado)
         subtitle_font = QFont("Arial", 14)
         painter.setFont(subtitle_font)
         painter.setPen(QColor("#aaaaaa"))
-        painter.drawText(20, 100, width-40, 25, Qt.AlignmentFlag.AlignCenter, "Sistema de Automatização v4.0.1")
+        painter.drawText(
+            20,
+            100,
+            width - 40,
+            25,
+            Qt.AlignmentFlag.AlignCenter,
+            "Processamento automatizado de PDFs",
+        )
         
         painter.end()
         return pixmap
@@ -367,7 +381,7 @@ class ProjectSelectionWindow(QMainWindow):
         super().__init__()
         self.project_manager = project_manager
 
-        self.setWindowTitle("Projetos de processamento")
+        self.setWindowTitle("Zenit Calc - Levantamento de Dados")
         self.setFixedSize(950, 600)
 
         central = QWidget()
@@ -375,10 +389,15 @@ class ProjectSelectionWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setSpacing(12)
 
-        header = QLabel("Selecione um projeto para iniciar ou crie um novo.")
-        header.setStyleSheet("font-size: 18px; font-weight: bold; padding: 10px;")
-        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(header)
+        title_label = QLabel("Zenit Calc - Levantamento de Dados")
+        title_label.setStyleSheet("font-size: 22px; font-weight: 700; padding-top: 12px;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        subtitle = QLabel("Selecione um projeto para iniciar ou crie um novo.")
+        subtitle.setStyleSheet("font-size: 16px; padding-bottom: 6px;")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle)
 
         self.projects_list = QListWidget()
         self.projects_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
@@ -1859,8 +1878,8 @@ class MainWindow(QMainWindow):
         self.project_toggle_button.setText("📁 Dados do projeto")
         self.project_toggle_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.project_toggle_button.setCheckable(True)
-        self.project_toggle_button.setChecked(True)
-        self.project_toggle_button.setArrowType(Qt.ArrowType.DownArrow)
+        self.project_toggle_button.setChecked(False)
+        self.project_toggle_button.setArrowType(Qt.ArrowType.RightArrow)
         self.project_toggle_button.clicked.connect(self._toggle_project_panel)
 
         toggle_layout.addWidget(self.project_toggle_button)
@@ -1936,11 +1955,13 @@ class MainWindow(QMainWindow):
         project_layout.addLayout(bottom_row)
 
         header_layout.addWidget(self.project_panel)
+        self.project_panel.setVisible(False)
 
         layout.addWidget(header_frame)
 
         # Inicializa valores do período
         self._load_project_metadata()
+        self._toggle_project_panel()
 
     def _load_project_metadata(self):
         """Carrega os dados do projeto para os campos do header."""

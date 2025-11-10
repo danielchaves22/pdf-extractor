@@ -2246,8 +2246,8 @@ class MainWindow(QMainWindow):
             )
             features_desc.setText(
                 "Nesta rotina os PDFs selecionados são consolidados para gerar CSVs "
-                "de PROVENTOS e ADIC. INSALUBRIDADE. Os arquivos de saída são salvos "
-                "na pasta configurada no projeto."
+                "de PROVENTOS, ADIC. INSALUBRIDADE e CARTÕES. Os arquivos de saída são "
+                "salvos na pasta configurada no projeto."
             )
 
         self.tab_widget.addTab(settings_widget, "⚙️ Configurações")

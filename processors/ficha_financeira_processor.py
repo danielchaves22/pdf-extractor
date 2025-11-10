@@ -53,7 +53,7 @@ class FichaFinanceiraProcessor:
 
     TARGET_CODES: Dict[str, Dict[str, object]] = {
         "1-Salario": {"column": 1},
-        "6-Horas": {"column": 1},
+        "6-Horas": {"column": 1, "search_prefix": "6 -"},
         "8-Insalubridade": {"column": 2},
         "3123-Base": {"column": 2},
         "167-Ferias": {"column": 2, "search_prefix": "167"},
@@ -64,12 +64,18 @@ class FichaFinanceiraProcessor:
         "527-INSS-Valor": {"column": 2, "search_prefix": "527"},
     }
 
-    OUTPUT_SPECS: Tuple[Dict[str, str], ...] = (
+    OUTPUT_SPECS: Tuple[Dict[str, object], ...] = (
         {"code": "3123-Base", "label": "PROVENTOS", "log": "PROVENTOS"},
         {
             "code": "8-Insalubridade",
             "label": "ADIC. INSALUBRIDADE PAGO",
             "log": "INSALUBRIDADE",
+        },
+        {
+            "code": "6-Horas",
+            "label": "CARTÕES",
+            "log": "CARTÕES",
+            "writer": "cartoes",
         },
     )
 
@@ -165,7 +171,11 @@ class FichaFinanceiraProcessor:
                 spec["log"],
             )
             output_path = target_dir / f"{spec['label']}_{folder_slug}.csv"
-            self._write_output_csv(output_path, values)
+            writer = spec.get("writer", "default")
+            if writer == "cartoes":
+                self._write_cartoes_csv(output_path, values)
+            else:
+                self._write_output_csv(output_path, values)
             self._log(f"✅ Arquivo gerado em {output_path}")
             outputs.append({
                 "label": spec["label"],
@@ -660,6 +670,20 @@ class FichaFinanceiraProcessor:
                         "",
                     ]
                 )
+
+    def _write_cartoes_csv(
+        self, output_path: Path, months: Iterable[Tuple[int, int, Decimal]]
+    ) -> None:
+        header = ["PERIODO", "HORAS EXTRAS"]
+
+        with output_path.open("w", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(csv_file, delimiter=";", lineterminator="\n")
+            writer.writerow(header)
+
+            for year, month, value in months:
+                mes_ano = f"{month:02d}/{year}"
+                formatted = self._format_decimal(value)
+                writer.writerow([mes_ano, formatted])
 
     def _iterate_months(self, start: date, end: date) -> Iterable[Tuple[int, int]]:
         current_year = start.year

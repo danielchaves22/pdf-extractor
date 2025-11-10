@@ -66,7 +66,7 @@ class FichaFinanceiraWindow(QMainWindow):
         layout.setSpacing(12)
 
         header = QLabel(
-            "Selecione o intervalo desejado e os PDFs da ficha financeira para gerar os CSVs (PROVENTOS e ADIC. INSALUBRIDADE PAGO)."
+            "Selecione o intervalo desejado e os PDFs da ficha financeira para gerar os CSVs (PROVENTOS, ADIC. INSALUBRIDADE PAGO e CARTÕES)."
         )
         header.setWordWrap(True)
         header.setAlignment(Qt.AlignmentFlag.AlignLeft)

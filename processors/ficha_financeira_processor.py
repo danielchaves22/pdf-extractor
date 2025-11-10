@@ -569,13 +569,17 @@ class FichaFinanceiraProcessor:
     ) -> None:
         base_values = aggregated.setdefault("3123-Base", {})
 
-        vacation_codes = ("173-Ferias", "174-Ferias")
-        vacation_months: Set[Tuple[int, int]] = set()
+        vacation_173 = aggregated.get("173-Ferias", {})
+        vacation_174 = aggregated.get("174-Ferias", {})
 
-        for code in vacation_codes:
-            for month_key, value in aggregated.get(code, {}).items():
-                if value != Decimal("0"):
-                    vacation_months.add(month_key)
+        vacation_months: Set[Tuple[int, int]] = {
+            key
+            for key in vacation_173.keys() & vacation_174.keys()
+            if (
+                vacation_173.get(key) not in (None, Decimal("0"))
+                and vacation_174.get(key) not in (None, Decimal("0"))
+            )
+        }
 
         if not vacation_months:
             return

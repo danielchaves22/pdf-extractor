@@ -129,7 +129,7 @@ class SplashScreen(QSplashScreen):
             width - 40,
             40,
             Qt.AlignmentFlag.AlignCenter,
-            "Zenit Calc - Levantamento de Dados",
+            "Levantamento de Dados",
         )
 
         # Subtítulo (com espaçamento aumentado)
@@ -381,7 +381,7 @@ class ProjectSelectionWindow(QMainWindow):
         super().__init__()
         self.project_manager = project_manager
 
-        self.setWindowTitle("Zenit Calc - Levantamento de Dados")
+        self.setWindowTitle("Levantamento de Dados")
         self.setFixedSize(950, 600)
 
         central = QWidget()
@@ -389,7 +389,7 @@ class ProjectSelectionWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setSpacing(12)
 
-        title_label = QLabel("Zenit Calc - Levantamento de Dados")
+        title_label = QLabel("Levantamento de Dados")
         title_label.setStyleSheet("font-size: 22px; font-weight: 700; padding-top: 12px;")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title_label)

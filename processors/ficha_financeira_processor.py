@@ -107,8 +107,17 @@ class FichaFinanceiraProcessor:
 
     NUMBER_PATTERN = re.compile(r"^\d{1,3}(?:\.\d{3})*,\d+$|^\d+(?:,\d+)?$")
 
-    def __init__(self, log_callback: Optional[LogCallback] = None) -> None:
+    CARTOES_TIME_MODE_DECIMAL = "decimal"
+    CARTOES_TIME_MODE_MINUTES = "minutes"
+
+    def __init__(
+        self,
+        log_callback: Optional[LogCallback] = None,
+        *,
+        config: Optional[Dict[str, object]] = None,
+    ) -> None:
         self._log_callback = log_callback
+        self._config: Dict[str, object] = dict(config or {})
 
     @classmethod
     def _storage_codes(cls) -> Set[str]:
@@ -203,6 +212,12 @@ class FichaFinanceiraProcessor:
                     )
                     if extra_code
                     else []
+                )
+                values = self._normalize_extra_hours_series(
+                    values, "HORA EXTRA 50"
+                )
+                extra_values = self._normalize_extra_hours_series(
+                    extra_values, "HORA EXTRA 100"
                 )
                 self._write_cartoes_csv(output_path, months_range, values, extra_values)
             else:
@@ -488,6 +503,75 @@ class FichaFinanceiraProcessor:
                 results[(block.year, best_month.month)] = value
 
         return results
+
+    def _normalize_extra_hours_series(
+        self,
+        series: Iterable[Tuple[int, int, Decimal]],
+        label: str,
+    ) -> List[Tuple[int, int, Decimal]]:
+        normalized: List[Tuple[int, int, Decimal]] = []
+
+        convert_minutes = self._should_convert_extra_hours_minutes()
+
+        for year, month, value in series:
+            converted = (
+                self._convert_extra_hours_minutes(value)
+                if convert_minutes
+                else value
+            )
+            normalized.append((year, month, converted))
+
+            if convert_minutes and converted != value:
+                self._log(
+                    "⏱️ Ajuste de tempo em "
+                    f"{month:02d}/{year} para {label}: "
+                    f"{self._format_decimal(value)} → {self._format_decimal(converted)}."
+                )
+
+        return normalized
+
+    def _should_convert_extra_hours_minutes(self) -> bool:
+        mode = str(
+            self._config.get(
+                "cartoes_time_mode",
+                self.CARTOES_TIME_MODE_DECIMAL,
+            )
+        ).lower()
+        return mode == self.CARTOES_TIME_MODE_MINUTES
+
+    def _convert_extra_hours_minutes(self, value: Decimal) -> Decimal:
+        if value == Decimal("0"):
+            return value
+
+        abs_value = value.copy_abs()
+        text = format(abs_value, "f")
+
+        if "." not in text:
+            return value
+
+        integer_text, fractional_text = text.split(".", 1)
+        if not fractional_text:
+            return value
+
+        if len(fractional_text) > 2:
+            return value
+
+        try:
+            minutes_total = int(fractional_text)
+        except ValueError:
+            return value
+
+        hours_from_minutes = minutes_total // 60
+        minutes_remainder = minutes_total % 60
+
+        base_hours = int(integer_text) if integer_text else 0
+
+        converted = (
+            Decimal(base_hours + hours_from_minutes)
+            + (Decimal(minutes_remainder) / Decimal("60"))
+        )
+
+        return converted if value >= 0 else -converted
 
     def _extract_column_centers(
         self, words: List[Dict[str, object]]

@@ -988,6 +988,7 @@ class FichaFinanceiraBatchThread(QThread):
         end_period: date,
         output_dir: str,
         max_workers: int,
+        cartoes_time_mode: str,
     ):
         super().__init__()
         self.pdf_files = [str(path) for path in pdf_files]
@@ -995,9 +996,15 @@ class FichaFinanceiraBatchThread(QThread):
         self.end_period = end_period
         self.output_dir = Path(output_dir)
         self.max_workers = max(1, max_workers)
+        self.cartoes_time_mode = cartoes_time_mode
 
     def run(self):
-        processor = FichaFinanceiraProcessor(log_callback=self._emit_log)
+        processor = FichaFinanceiraProcessor(
+            log_callback=self._emit_log,
+            config={
+                "cartoes_time_mode": self.cartoes_time_mode
+            },
+        )
 
         try:
             for pdf_file in self.pdf_files:
@@ -1807,6 +1814,11 @@ class MainWindow(QMainWindow):
         self.max_threads = 3
         self.verbose_mode = False
         self.preferred_sheet = ""
+        self.cartoes_time_mode = (
+            FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL
+            if self.project_model == ProjectManager.MODEL_FICHA
+            else ""
+        )
 
         # Gerenciador de persistência
         self.persistence = PersistenceManager(project_id=self.project.project_id)
@@ -2250,6 +2262,39 @@ class MainWindow(QMainWindow):
                 "salvos na pasta configurada no projeto."
             )
 
+            cartoes_group = QGroupBox("🕒 Formato das horas extras dos cartões")
+            cartoes_layout = QVBoxLayout(cartoes_group)
+
+            cartoes_desc = QLabel(
+                "Algumas fichas registram a parte decimal das horas como minutos (ex.: 4,12 = 4h12). "
+                "Defina abaixo como interpretar os valores para as colunas de horas extras dos cartões."
+            )
+            cartoes_desc.setStyleSheet("color: #888;")
+            cartoes_desc.setWordWrap(True)
+            cartoes_layout.addWidget(cartoes_desc)
+
+            self.cartoes_time_mode_combo = QComboBox()
+            self.cartoes_time_mode_combo.addItem(
+                "Decimais (padrão)",
+                FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL,
+            )
+            self.cartoes_time_mode_combo.addItem(
+                "Minutos (00-59)",
+                FichaFinanceiraProcessor.CARTOES_TIME_MODE_MINUTES,
+            )
+            default_index = self.cartoes_time_mode_combo.findData(
+                self.cartoes_time_mode
+                or FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL
+            )
+            if default_index >= 0:
+                self.cartoes_time_mode_combo.setCurrentIndex(default_index)
+            self.cartoes_time_mode_combo.currentIndexChanged.connect(
+                self._on_cartoes_time_mode_changed
+            )
+            cartoes_layout.addWidget(self.cartoes_time_mode_combo)
+
+            layout.addWidget(cartoes_group)
+
         self.tab_widget.addTab(settings_widget, "⚙️ Configurações")
     
     def _get_processor(self):
@@ -2483,6 +2528,7 @@ class MainWindow(QMainWindow):
             end_period,
             self.trabalho_dir,
             self.max_threads,
+            self.cartoes_time_mode
         )
 
         self.processor_thread.progress_updated.connect(self.handle_progress_update)
@@ -2760,7 +2806,31 @@ class MainWindow(QMainWindow):
         self.max_threads = int(value)
         self._on_config_changed()
         self.add_log_message(f"Threads configuradas: {value} workers (sempre ThreadPoolExecutor)")
-    
+
+    def _on_cartoes_time_mode_changed(self):
+        """Atualiza modo de interpretação das horas extras."""
+        if not hasattr(self, 'cartoes_time_mode_combo'):
+            return
+
+        mode = self.cartoes_time_mode_combo.currentData()
+        if mode:
+            self.cartoes_time_mode = str(mode)
+        else:
+            self.cartoes_time_mode = (
+                FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL
+            )
+
+        if self.cartoes_time_mode == FichaFinanceiraProcessor.CARTOES_TIME_MODE_MINUTES:
+            self.add_log_message(
+                "Configuração aplicada: horas extras dos cartões tratadas como minutos (00-59)."
+            )
+        else:
+            self.add_log_message(
+                "Configuração aplicada: horas extras dos cartões tratadas como decimais."
+            )
+
+        self._on_config_changed()
+
     def _on_config_changed(self):
         """Callback genérico para mudanças de configuração"""
         # Verifica se save_timer existe antes de usar
@@ -2775,7 +2845,10 @@ class MainWindow(QMainWindow):
             'verbose_mode': self.verbose_checkbox.isChecked(),
             'preferred_sheet': self.sheet_entry.text().strip()
         }
-        
+
+        if self.project_model == ProjectManager.MODEL_FICHA:
+            config['cartoes_time_mode'] = self.cartoes_time_mode
+
         self.persistence.save_config(config)
     
     def load_persisted_data(self):
@@ -2800,6 +2873,20 @@ class MainWindow(QMainWindow):
             if config.get('preferred_sheet'):
                 self.preferred_sheet = config['preferred_sheet']
                 self.sheet_entry.setText(self.preferred_sheet)
+
+            if (
+                self.project_model == ProjectManager.MODEL_FICHA
+                and config.get('cartoes_time_mode')
+            ):
+                self.cartoes_time_mode = config['cartoes_time_mode']
+                if hasattr(self, 'cartoes_time_mode_combo'):
+                    index = self.cartoes_time_mode_combo.findData(
+                        self.cartoes_time_mode
+                    )
+                    if index >= 0:
+                        self.cartoes_time_mode_combo.blockSignals(True)
+                        self.cartoes_time_mode_combo.setCurrentIndex(index)
+                        self.cartoes_time_mode_combo.blockSignals(False)
             
             # Carrega histórico
             self.processing_history = self.persistence.load_all_history_entries()

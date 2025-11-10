@@ -732,11 +732,14 @@ class FichaFinanceiraProcessor:
 
             vacation_months.update(qualifying)
 
-        if not vacation_months:
-            return
-
         inss_comp = aggregated.get("527-INSS-Comp", {})
         inss_valor = aggregated.get("527-INSS-Valor", {})
+
+        vacation_months.update(inss_comp.keys())
+        vacation_months.update(inss_valor.keys())
+
+        if not vacation_months:
+            return
 
         for year, month in vacation_months:
             key = (year, month)
@@ -755,7 +758,9 @@ class FichaFinanceiraProcessor:
                 continue
 
             additional = valor_value / divisor
-            base_current = base_values.get(key, Decimal("0"))
+            base_current = base_values.get(key)
+            if base_current is None:
+                base_current = Decimal("0")
             base_values[key] = base_current + additional
 
             self._log(

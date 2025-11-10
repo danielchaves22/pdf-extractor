@@ -435,26 +435,44 @@ class FichaFinanceiraProcessor:
         self, words: List[Dict[str, object]], prefix: str, block: MonthBlock
     ) -> List[List[Dict[str, object]]]:
         rows: List[List[Dict[str, object]]] = []
-        tolerance = 0.8
+        y_margin = 0.8
+        x_margin = 1.0
 
         normalized_prefix = self._normalize_code_text(prefix)
+        seen_origins: Set[Tuple[int, int, int, int]] = set()
 
         for word in words:
             text = word.get("text", "")
             if not self._normalize_code_text(text).startswith(normalized_prefix):
                 continue
 
-            row_center = (word["top"] + word["bottom"]) / 2
-            if not (block.y_start <= row_center <= block.y_end):
+            origin = (
+                int(round(word.get("top", 0) * 100)),
+                int(round(word.get("bottom", 0) * 100)),
+                int(round(word.get("x0", 0) * 100)),
+                int(round(word.get("x1", 0) * 100)),
+            )
+            if origin in seen_origins:
                 continue
+            seen_origins.add(origin)
 
-            row_words = [
-                candidate
-                for candidate in words
-                if abs(((candidate["top"] + candidate["bottom"]) / 2) - row_center)
-                <= tolerance
-            ]
-            rows.append(row_words)
+            row_top = max(block.y_start, word["top"] - y_margin)
+            row_bottom = min(block.y_end, word["bottom"] + y_margin)
+            min_x = word["x0"] - x_margin
+
+            row_words: List[Dict[str, object]] = []
+            for candidate in words:
+                candidate_center = (candidate["top"] + candidate["bottom"]) / 2
+                if not (row_top <= candidate_center <= row_bottom):
+                    continue
+
+                if candidate["x1"] < min_x:
+                    continue
+
+                row_words.append(candidate)
+
+            if row_words:
+                rows.append(row_words)
 
         return rows
 

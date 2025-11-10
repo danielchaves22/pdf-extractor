@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import re
+import threading
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -97,6 +99,8 @@ class FichaFinanceiraProcessor:
         start_period: date,
         end_period: date,
         output_dir: Path,
+        *,
+        max_workers: int = 1,
     ) -> Dict[str, object]:
         """Processa PDFs e gera o arquivo PROVENTOS.csv."""
 
@@ -105,6 +109,7 @@ class FichaFinanceiraProcessor:
             start_period=start_period,
             end_period=end_period,
             output_dir=output_dir,
+            max_workers=max_workers,
         )
 
         for output in result["outputs"]:
@@ -123,13 +128,15 @@ class FichaFinanceiraProcessor:
         start_period: date,
         end_period: date,
         output_dir: Path,
+        *,
+        max_workers: int = 1,
     ) -> Dict[str, object]:
         """Gera todos os CSVs configurados para a ficha financeira."""
 
         if start_period > end_period:
             raise ValueError("Período inicial não pode ser maior que o final.")
 
-        aggregated, person_name = self._aggregate_pdfs(pdf_paths)
+        aggregated, person_name = self._aggregate_pdfs(pdf_paths, max_workers=max_workers)
 
         months_range = list(self._iterate_months(start_period, end_period))
         output_dir_path = Path(output_dir)
@@ -169,7 +176,9 @@ class FichaFinanceiraProcessor:
     # Extração de dados
     # ------------------------------------------------------------------
     def _aggregate_pdfs(
-        self, pdf_paths: Sequence[Path]
+        self,
+        pdf_paths: Sequence[Path],
+        max_workers: int = 1,
     ) -> Tuple[Dict[str, NumberByMonth], str]:
         if not pdf_paths:
             raise ValueError("Informe ao menos um PDF para processamento.")
@@ -179,33 +188,57 @@ class FichaFinanceiraProcessor:
         }
         person_name: Optional[str] = None
 
+        resolved_paths: List[Path] = []
         for pdf_path in pdf_paths:
             path = Path(pdf_path)
             if not path.exists():
                 raise FileNotFoundError(f"Arquivo não encontrado: {path}")
+            resolved_paths.append(path)
 
-            self._log(f"📄 Lendo {path.name}")
-            parse_result = self._parse_pdf(path)
+        effective_workers = max(1, min(max_workers, len(resolved_paths)))
+        merge_lock = threading.Lock()
 
-            if not person_name and parse_result["person_name"]:
-                person_name = parse_result["person_name"]
-            elif (
-                person_name
-                and parse_result["person_name"]
-                and parse_result["person_name"].lower() != person_name.lower()
-            ):
-                self._log(
-                    "⚠️ Nomes diferentes encontrados nos PDFs. Mantendo o primeiro identificado."
-                )
+        def merge_results(path: Path, parse_result: Dict[str, object]) -> None:
+            nonlocal person_name
+            with merge_lock:
+                parsed_name = parse_result.get("person_name")
 
-            for code, values in parse_result["values"].items():
-                target = aggregated.setdefault(code, {})
-                for key, value in values.items():
-                    if key in target and target[key] != value:
+                if parsed_name:
+                    if not person_name:
+                        person_name = parsed_name
+                    elif parsed_name.lower() != person_name.lower():
                         self._log(
-                            f"⚠️ Valor duplicado para {code} em {key[1]:02d}/{key[0]}: substituindo {target[key]} por {value}."
+                            "⚠️ Nomes diferentes encontrados nos PDFs. Mantendo o primeiro identificado."
                         )
-                    target[key] = value
+
+                for code, values in parse_result["values"].items():
+                    target = aggregated.setdefault(code, {})
+                    for key, value in values.items():
+                        if key in target and target[key] != value:
+                            self._log(
+                                f"⚠️ Valor duplicado para {code} em {key[1]:02d}/{key[0]}: substituindo {target[key]} por {value}."
+                            )
+                        target[key] = value
+
+        if effective_workers == 1:
+            for path in resolved_paths:
+                self._log(f"📄 Lendo {path.name}")
+                parse_result = self._parse_pdf(path)
+                merge_results(path, parse_result)
+        else:
+            def parse_path(path: Path) -> Tuple[Path, Dict[str, object]]:
+                self._log(f"📄 Lendo {path.name}")
+                return path, self._parse_pdf(path)
+
+            with ThreadPoolExecutor(max_workers=effective_workers) as executor:
+                futures = {
+                    executor.submit(parse_path, path): path
+                    for path in resolved_paths
+                }
+
+                for future in as_completed(futures):
+                    path, parse_result = future.result()
+                    merge_results(path, parse_result)
 
         if not person_name:
             person_name = Path(pdf_paths[0]).stem

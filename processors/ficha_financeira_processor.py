@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import pdfplumber
 
@@ -56,6 +56,10 @@ class FichaFinanceiraProcessor:
         "6-Horas": {"column": 1},
         "8-Insalubridade": {"column": 2},
         "3123-Base": {"column": 2},
+        "173-Ferias": {"column": 2, "search_prefix": "173"},
+        "174-Ferias": {"column": 2, "search_prefix": "174"},
+        "527-INSS-Comp": {"column": 1, "search_prefix": "527"},
+        "527-INSS-Valor": {"column": 2, "search_prefix": "527"},
     }
 
     OUTPUT_SPECS: Tuple[Dict[str, str], ...] = (
@@ -137,6 +141,8 @@ class FichaFinanceiraProcessor:
             raise ValueError("Período inicial não pode ser maior que o final.")
 
         aggregated, person_name = self._aggregate_pdfs(pdf_paths, max_workers=max_workers)
+
+        self._apply_vacation_adjustments(aggregated)
 
         months_range = list(self._iterate_months(start_period, end_period))
         output_dir_path = Path(output_dir)
@@ -316,9 +322,12 @@ class FichaFinanceiraProcessor:
                 for block, state in active_blocks:
                     block_has_values = False
 
-                    for prefix, cfg in self.TARGET_CODES.items():
+                    for code, cfg in self.TARGET_CODES.items():
                         column_index = int(cfg["column"])
-                        occurrences = self._find_row_occurrences(words, prefix, block)
+                        search_prefix = str(cfg.get("search_prefix", code))
+                        occurrences = self._find_row_occurrences(
+                            words, search_prefix, block
+                        )
                         if not occurrences:
                             continue
 
@@ -331,12 +340,12 @@ class FichaFinanceiraProcessor:
 
                             block_has_values = True
 
-                            target = values.setdefault(prefix, {})
+                            target = values.setdefault(code, {})
                             for month_key, amount in extracted.items():
                                 existing = target.get(month_key)
                                 if existing is not None and existing != amount:
                                     self._log(
-                                        f"⚠️ Valores conflitantes para {prefix} em {month_key[1]:02d}/{month_key[0]} (substituindo {existing} por {amount})."
+                                        f"⚠️ Valores conflitantes para {code} em {month_key[1]:02d}/{month_key[0]} (substituindo {existing} por {amount})."
                                     )
                                 target[month_key] = amount
 
@@ -575,6 +584,50 @@ class FichaFinanceiraProcessor:
             )
 
         return results
+
+    def _apply_vacation_adjustments(
+        self, aggregated: Dict[str, NumberByMonth]
+    ) -> None:
+        base_values = aggregated.setdefault("3123-Base", {})
+
+        vacation_codes = ("173-Ferias", "174-Ferias")
+        vacation_months: Set[Tuple[int, int]] = set()
+
+        for code in vacation_codes:
+            for month_key, value in aggregated.get(code, {}).items():
+                if value != Decimal("0"):
+                    vacation_months.add(month_key)
+
+        if not vacation_months:
+            return
+
+        inss_comp = aggregated.get("527-INSS-Comp", {})
+        inss_valor = aggregated.get("527-INSS-Valor", {})
+
+        for year, month in vacation_months:
+            key = (year, month)
+            comp_value = inss_comp.get(key)
+            valor_value = inss_valor.get(key)
+
+            if (
+                comp_value is None
+                or valor_value is None
+                or comp_value == Decimal("0")
+            ):
+                continue
+
+            divisor = comp_value / Decimal("100")
+            if divisor == Decimal("0"):
+                continue
+
+            additional = valor_value / divisor
+            base_current = base_values.get(key, Decimal("0"))
+            base_values[key] = base_current + additional
+
+            self._log(
+                "➕ Ajuste de férias aplicado em "
+                f"{month:02d}/{year}: {self._format_decimal(additional)} somado ao 3123."
+            )
 
     def _write_output_csv(
         self, output_path: Path, months: Iterable[Tuple[int, int, Decimal]]

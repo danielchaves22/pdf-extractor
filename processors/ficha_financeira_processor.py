@@ -411,41 +411,21 @@ class FichaFinanceiraProcessor:
                 target_center = (
                     month.comp_center if column == 1 else month.valor_center
                 )
-                alternate_center = (
-                    month.valor_center if column == 1 else month.comp_center
-                )
 
-                if target_center is None and alternate_center is None:
-                    continue
+                if target_center is not None:
+                    distance = abs(center - target_center)
+                else:
+                    alternate_center = (
+                        month.valor_center if column == 1 else month.comp_center
+                    )
+                    if alternate_center is None:
+                        continue
+                    distance = abs(center - alternate_center)
 
-                distance = (
-                    abs(center - target_center)
-                    if target_center is not None
-                    else None
-                )
-                alt_distance = (
-                    abs(center - alternate_center)
-                    if alternate_center is not None
-                    else None
-                )
-
-                chosen_center = None
-                chosen_distance = None
-
-                if distance is not None and (alt_distance is None or distance <= alt_distance):
-                    chosen_center = target_center
-                    chosen_distance = distance
-                elif alt_distance is not None:
-                    chosen_center = alternate_center
-                    chosen_distance = alt_distance
-
-                if chosen_center is None:
-                    continue
-
-                if chosen_distance is not None and chosen_distance <= 25:
-                    if best_distance is None or chosen_distance < best_distance:
+                if distance <= 25:
+                    if best_distance is None or distance < best_distance:
                         best_month = month
-                        best_distance = chosen_distance
+                        best_distance = distance
 
             if best_month is not None:
                 results[(block.year, best_month.month)] = value

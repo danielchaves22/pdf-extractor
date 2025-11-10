@@ -723,10 +723,10 @@ class FichaFinanceiraProcessor:
 
             qualifying = {
                 key
-                for key in values_a.keys() & values_b.keys()
+                for key in values_a.keys() | values_b.keys()
                 if (
                     values_a.get(key) not in (None, Decimal("0"))
-                    and values_b.get(key) not in (None, Decimal("0"))
+                    or values_b.get(key) not in (None, Decimal("0"))
                 )
             }
 

@@ -435,7 +435,7 @@ class FichaFinanceiraProcessor:
         self, words: List[Dict[str, object]], prefix: str, block: MonthBlock
     ) -> List[List[Dict[str, object]]]:
         rows: List[List[Dict[str, object]]] = []
-        y_margin = 0.8
+        y_margin = 0.5
         x_margin = 1.0
 
         normalized_prefix = self._normalize_code_text(prefix)
@@ -460,6 +460,8 @@ class FichaFinanceiraProcessor:
             row_bottom = min(block.y_end, word["bottom"] + y_margin)
             min_x = word["x0"] - x_margin
             line_key = self._word_line_key(word)
+            code_center = (float(word.get("top", 0)) + float(word.get("bottom", 0))) / 2
+            center_tolerance = 0.3
 
             row_words: List[Dict[str, object]] = []
             for candidate in words:
@@ -470,6 +472,12 @@ class FichaFinanceiraProcessor:
                     continue
 
                 if candidate["x1"] < min_x:
+                    continue
+
+                candidate_center = (
+                    float(candidate.get("top", 0)) + float(candidate.get("bottom", 0))
+                ) / 2
+                if abs(candidate_center - code_center) > center_tolerance:
                     continue
 
                 row_words.append(candidate)
@@ -488,15 +496,15 @@ class FichaFinanceiraProcessor:
 
         doctop = word.get("doctop")
         if doctop is not None:
-            scaled = int(round(float(doctop) * 10))
+            scaled = int(round(float(doctop) * 100))
             return ("doctop", scaled, None)
 
         top = word.get("top")
         bottom = word.get("bottom")
         return (
             "bounds",
-            int(round(float(top or 0) * 10)),
-            int(round(float(bottom or 0) * 10)),
+            int(round(float(top or 0) * 100)),
+            int(round(float(bottom or 0) * 100)),
         )
 
     def _normalize_code_text(self, text: str) -> str:

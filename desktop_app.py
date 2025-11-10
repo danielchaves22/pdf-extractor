@@ -58,7 +58,7 @@ from PyQt6.QtWidgets import (
     QListWidget, QListWidgetItem, QFrame, QDialog, QScrollArea,
     QCheckBox, QSpinBox, QFileDialog, QMessageBox, QSizePolicy,
     QSplitter, QGroupBox, QFormLayout, QComboBox, QSplashScreen,
-    QDialogButtonBox
+    QDialogButtonBox, QToolButton
 )
 from PyQt6.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QSize, pyqtSlot, QMimeData, QObject
@@ -324,11 +324,14 @@ class ProjectListItemWidget(QWidget):
         ProjectManager.MODEL_FICHA: "Ficha Financeira",
     }
 
-    def __init__(self, project: ProjectMetadata):
+    def __init__(self, project: ProjectMetadata, open_callback: Optional[Callable[[str], None]] = None):
         super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(4)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(10, 6, 10, 6)
+        main_layout.setSpacing(12)
+
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(2)
 
         name_label = QLabel(f"📁 {project.name}")
         name_label.setStyleSheet("font-weight: bold; font-size: 14px;")
@@ -339,9 +342,20 @@ class ProjectListItemWidget(QWidget):
         period_label = QLabel(f"Período: {ProjectManager.format_period(project)}")
         period_label.setStyleSheet("color: #888; font-size: 11px;")
 
-        layout.addWidget(name_label)
-        layout.addWidget(model_label)
-        layout.addWidget(period_label)
+        info_layout.addWidget(name_label)
+        info_layout.addWidget(model_label)
+        info_layout.addWidget(period_label)
+
+        main_layout.addLayout(info_layout, 1)
+
+        open_button = QPushButton("🚀 Abrir")
+        open_button.setToolTip("Abrir este projeto")
+        open_button.setProperty("class", "primary")
+
+        if open_callback is not None:
+            open_button.clicked.connect(lambda: open_callback(project.project_id))
+
+        main_layout.addWidget(open_button)
 
 
 class ProjectSelectionWindow(QMainWindow):
@@ -368,7 +382,6 @@ class ProjectSelectionWindow(QMainWindow):
 
         self.projects_list = QListWidget()
         self.projects_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.projects_list.itemSelectionChanged.connect(self._on_selection_changed)
         self.projects_list.itemDoubleClicked.connect(self._on_open_selected)
 
         layout.addWidget(self.projects_list, 1)
@@ -384,10 +397,6 @@ class ProjectSelectionWindow(QMainWindow):
         self.create_button = QPushButton("➕ Criar projeto")
         self.create_button.clicked.connect(self._on_create_project)
 
-        self.open_button = QPushButton("🚀 Abrir projeto")
-        self.open_button.setEnabled(False)
-        self.open_button.clicked.connect(self._on_open_selected)
-
         self.refresh_button = QPushButton("🔄 Atualizar lista")
         self.refresh_button.clicked.connect(self.refresh_projects)
 
@@ -395,7 +404,6 @@ class ProjectSelectionWindow(QMainWindow):
         self.close_button.clicked.connect(self.close)
 
         buttons_layout.addWidget(self.create_button)
-        buttons_layout.addWidget(self.open_button)
         buttons_layout.addWidget(self.refresh_button)
         buttons_layout.addStretch()
         buttons_layout.addWidget(self.close_button)
@@ -415,7 +423,7 @@ class ProjectSelectionWindow(QMainWindow):
 
         for project in projects:
             item = QListWidgetItem()
-            widget = ProjectListItemWidget(project)
+            widget = ProjectListItemWidget(project, self._open_project_by_id)
             item.setSizeHint(widget.sizeHint())
             item.setData(Qt.ItemDataRole.UserRole, project.project_id)
             self.projects_list.addItem(item)
@@ -431,22 +439,25 @@ class ProjectSelectionWindow(QMainWindow):
                         break
             self.projects_list.setCurrentRow(index_to_select)
 
-        self._on_selection_changed()
-
     def _current_project_id(self) -> Optional[str]:
         item = self.projects_list.currentItem()
         if item is None:
             return None
         return item.data(Qt.ItemDataRole.UserRole)
 
-    def _on_selection_changed(self):
-        self.open_button.setEnabled(self._current_project_id() is not None)
-
     def _on_open_selected(self):
         project_id = self._current_project_id()
         if project_id:
-            self.project_manager.set_last_selected(project_id)
-            self.project_open_requested.emit(project_id)
+            self._open_project_by_id(project_id)
+
+    def _open_project_by_id(self, project_id: str):
+        for index in range(self.projects_list.count()):
+            item = self.projects_list.item(index)
+            if item.data(Qt.ItemDataRole.UserRole) == project_id:
+                self.projects_list.setCurrentRow(index)
+                break
+        self.project_manager.set_last_selected(project_id)
+        self.project_open_requested.emit(project_id)
 
     def _on_create_project(self):
         dialog = ProjectCreationDialog(self.project_manager, self)
@@ -951,12 +962,20 @@ class FichaFinanceiraBatchThread(QThread):
     batch_completed = pyqtSignal()
     log_message = pyqtSignal(str)
 
-    def __init__(self, pdf_files: List[str], start_period: date, end_period: date, output_dir: str):
+    def __init__(
+        self,
+        pdf_files: List[str],
+        start_period: date,
+        end_period: date,
+        output_dir: str,
+        max_workers: int,
+    ):
         super().__init__()
         self.pdf_files = [str(path) for path in pdf_files]
         self.start_period = start_period
         self.end_period = end_period
         self.output_dir = Path(output_dir)
+        self.max_workers = max(1, max_workers)
 
     def run(self):
         processor = FichaFinanceiraProcessor(log_callback=self._emit_log)
@@ -971,6 +990,7 @@ class FichaFinanceiraBatchThread(QThread):
                 self.start_period,
                 self.end_period,
                 self.output_dir,
+                max_workers=self.max_workers,
             )
 
             sanitized_outputs = []
@@ -1812,6 +1832,13 @@ class MainWindow(QMainWindow):
         )
         return f"{self.project.name} • {model_name}"
 
+    def _toggle_project_panel(self):
+        expanded = self.project_toggle_button.isChecked()
+        self.project_panel.setVisible(expanded)
+        self.project_toggle_button.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+        )
+
     def create_header(self, layout):
         """Cria header da aplicação com dados do projeto."""
         header_frame = QFrame()
@@ -1821,14 +1848,32 @@ class MainWindow(QMainWindow):
 
         self.project_header_label = QLabel(self._format_project_header())
         self.project_header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.project_header_label.setStyleSheet("font-size: 16px; font-weight: 600; padding: 4px;")
+        self.project_header_label.setStyleSheet("font-size: 14px; font-weight: 600; padding: 4px;")
 
         header_layout.addWidget(self.project_header_label)
 
-        project_box = QGroupBox("📁 Projeto ativo")
-        project_layout = QVBoxLayout(project_box)
+        toggle_layout = QHBoxLayout()
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.project_toggle_button = QToolButton()
+        self.project_toggle_button.setText("📁 Dados do projeto")
+        self.project_toggle_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.project_toggle_button.setCheckable(True)
+        self.project_toggle_button.setChecked(True)
+        self.project_toggle_button.setArrowType(Qt.ArrowType.DownArrow)
+        self.project_toggle_button.clicked.connect(self._toggle_project_panel)
+
+        toggle_layout.addWidget(self.project_toggle_button)
+        toggle_layout.addStretch()
+        header_layout.addLayout(toggle_layout)
+
+        self.project_panel = QFrame()
+        self.project_panel.setFrameShape(QFrame.Shape.StyledPanel)
+        self.project_panel.setStyleSheet("QFrame { border: 1px solid #333; border-radius: 6px; }")
+
+        project_layout = QVBoxLayout(self.project_panel)
         project_layout.setSpacing(8)
-        project_layout.setContentsMargins(12, 8, 12, 12)
+        project_layout.setContentsMargins(12, 10, 12, 12)
 
         top_row = QHBoxLayout()
         top_row.setSpacing(12)
@@ -1890,7 +1935,7 @@ class MainWindow(QMainWindow):
 
         project_layout.addLayout(bottom_row)
 
-        header_layout.addWidget(project_box)
+        header_layout.addWidget(self.project_panel)
 
         layout.addWidget(header_frame)
 
@@ -2173,8 +2218,11 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         
         if self.project_model == ProjectManager.MODEL_FICHA:
-            parallel_group.hide()
             sheet_group.hide()
+            parallel_desc.setText(
+                "Defina quantos PDFs serão analisados simultaneamente durante a consolidação. "
+                "Ajuste este valor se notar consumo elevado de recursos."
+            )
             features_desc.setText(
                 "Nesta rotina os PDFs selecionados são consolidados para gerar CSVs "
                 "de PROVENTOS e ADIC. INSALUBRIDADE. Os arquivos de saída são salvos "
@@ -2413,6 +2461,7 @@ class MainWindow(QMainWindow):
             start_period,
             end_period,
             self.trabalho_dir,
+            self.max_threads,
         )
 
         self.processor_thread.progress_updated.connect(self.handle_progress_update)

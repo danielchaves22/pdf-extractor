@@ -56,6 +56,8 @@ class FichaFinanceiraProcessor:
         "6-Horas": {"column": 1},
         "8-Insalubridade": {"column": 2},
         "3123-Base": {"column": 2},
+        "167-Ferias": {"column": 2, "search_prefix": "167"},
+        "168-Ferias": {"column": 2, "search_prefix": "168"},
         "173-Ferias": {"column": 2, "search_prefix": "173"},
         "174-Ferias": {"column": 2, "search_prefix": "174"},
         "527-INSS-Comp": {"column": 1, "search_prefix": "527"},
@@ -569,17 +571,27 @@ class FichaFinanceiraProcessor:
     ) -> None:
         base_values = aggregated.setdefault("3123-Base", {})
 
-        vacation_173 = aggregated.get("173-Ferias", {})
-        vacation_174 = aggregated.get("174-Ferias", {})
+        vacation_pairs = (
+            ("173-Ferias", "174-Ferias"),
+            ("167-Ferias", "168-Ferias"),
+        )
 
-        vacation_months: Set[Tuple[int, int]] = {
-            key
-            for key in vacation_173.keys() & vacation_174.keys()
-            if (
-                vacation_173.get(key) not in (None, Decimal("0"))
-                and vacation_174.get(key) not in (None, Decimal("0"))
-            )
-        }
+        vacation_months: Set[Tuple[int, int]] = set()
+
+        for code_a, code_b in vacation_pairs:
+            values_a = aggregated.get(code_a, {})
+            values_b = aggregated.get(code_b, {})
+
+            qualifying = {
+                key
+                for key in values_a.keys() & values_b.keys()
+                if (
+                    values_a.get(key) not in (None, Decimal("0"))
+                    and values_b.get(key) not in (None, Decimal("0"))
+                )
+            }
+
+            vacation_months.update(qualifying)
 
         if not vacation_months:
             return

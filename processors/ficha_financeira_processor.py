@@ -55,6 +55,11 @@ class FichaFinanceiraProcessor:
         "1-Salario": {"column": 1},
         "6-Horas": {"column": 1, "search_prefix": "6 -"},
         "8-Insalubridade": {"column": 2},
+        "205-Insalubridade-ACS": {
+            "column": 2,
+            "search_prefix": "205",
+            "alias_for": "8-Insalubridade",
+        },
         "3123-Base": {"column": 2},
         "167-Ferias": {"column": 2, "search_prefix": "167"},
         "168-Ferias": {"column": 2, "search_prefix": "168"},
@@ -101,6 +106,17 @@ class FichaFinanceiraProcessor:
 
     def __init__(self, log_callback: Optional[LogCallback] = None) -> None:
         self._log_callback = log_callback
+
+    @classmethod
+    def _storage_codes(cls) -> Set[str]:
+        codes: Set[str] = set()
+        for code, cfg in cls.TARGET_CODES.items():
+            alias_for = cfg.get("alias_for")
+            if isinstance(alias_for, str) and alias_for:
+                codes.add(alias_for)
+            else:
+                codes.add(code)
+        return codes
 
     # ------------------------------------------------------------------
     # API pública
@@ -201,7 +217,7 @@ class FichaFinanceiraProcessor:
             raise ValueError("Informe ao menos um PDF para processamento.")
 
         aggregated: Dict[str, NumberByMonth] = {
-            key: {} for key in self.TARGET_CODES.keys()
+            key: {} for key in self._storage_codes()
         }
         person_name: Optional[str] = None
 
@@ -265,7 +281,7 @@ class FichaFinanceiraProcessor:
 
     def _parse_pdf(self, pdf_path: Path) -> Dict[str, object]:
         values: Dict[str, NumberByMonth] = {
-            key: {} for key in self.TARGET_CODES.keys()
+            key: {} for key in self._storage_codes()
         }
         person_name: Optional[str] = None
 
@@ -351,7 +367,8 @@ class FichaFinanceiraProcessor:
 
                             block_has_values = True
 
-                            target = values.setdefault(code, {})
+                            storage_code = str(cfg.get("alias_for", code))
+                            target = values.setdefault(storage_code, {})
                             for month_key, amount in extracted.items():
                                 existing = target.get(month_key)
                                 if existing is not None and existing != amount:

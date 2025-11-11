@@ -439,12 +439,38 @@ class FichaFinanceiraProcessor:
         x_margin = 1.0
 
         normalized_prefix = self._normalize_code_text(prefix)
+        numeric_prefix = normalized_prefix.isdigit()
         seen_origins: Set[Tuple[int, int, int, int]] = set()
+
+        code_column_margin = 12.0
+        column_boundaries = [
+            center
+            for month in block.months
+            for center in (month.comp_center, month.valor_center)
+            if center is not None
+        ]
+        code_max_x: Optional[float] = None
+        if column_boundaries:
+            code_max_x = max(0.0, min(column_boundaries) - code_column_margin)
+        else:
+            self._log(
+                "⚠️ Limite da coluna de códigos não estimado; usando heurística textual."
+            )
 
         for word in words:
             text = word.get("text", "")
-            if not self._normalize_code_text(text).startswith(normalized_prefix):
+            normalized_text = self._normalize_code_text(text)
+
+            if code_max_x is not None and float(word.get("x1", 0.0)) > code_max_x:
                 continue
+
+            if not normalized_text.startswith(normalized_prefix):
+                continue
+
+            if numeric_prefix and len(normalized_text) > len(normalized_prefix):
+                next_char = normalized_text[len(normalized_prefix)]
+                if next_char.isdigit() or next_char in {",", "."}:
+                    continue
 
             origin = (
                 int(round(word.get("top", 0) * 100)),

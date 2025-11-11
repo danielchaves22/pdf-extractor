@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -216,7 +215,9 @@ class FichaFinanceiraProcessor:
 
             self._apply_vacation_adjustments(aggregated)
 
-            folder_slug = self._build_folder_slug(path, person_name)
+            folder_slug, file_slug = self._build_folder_and_file_slugs(
+                path, person_name
+            )
             target_dir = output_dir_path / folder_slug
             target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -228,7 +229,7 @@ class FichaFinanceiraProcessor:
                 aggregated,
                 months_range,
                 target_dir,
-                folder_slug,
+                file_slug,
             )
 
             self._log(
@@ -265,12 +266,12 @@ class FichaFinanceiraProcessor:
         aggregated: Dict[str, NumberByMonth],
         months_range: Sequence[Tuple[int, int]],
         target_dir: Path,
-        folder_slug: str,
+        file_slug: str,
     ) -> List[Dict[str, object]]:
         outputs: List[Dict[str, object]] = []
 
         for spec in self.OUTPUT_SPECS:
-            output_path = target_dir / f"{spec['label']}_{folder_slug}.csv"
+            output_path = target_dir / f"{spec['label']}_{file_slug}.csv"
             writer = spec.get("writer", "default")
             if writer == "cartoes":
                 values = self._collect_values_for_code(
@@ -1080,16 +1081,19 @@ class FichaFinanceiraProcessor:
                 current_month = 1
                 current_year += 1
 
-    def _build_folder_slug(self, path: Path, person_name: str) -> str:
+    def _build_folder_and_file_slugs(
+        self, path: Path, person_name: str
+    ) -> Tuple[str, str]:
         base_slug = self._slugify_name(person_name)
         if not base_slug:
             base_slug = self._slugify_name(path.stem)
-        unique_token = hashlib.blake2s(
-            str(path.resolve()).encode("utf-8"), digest_size=4
-        ).hexdigest()
-        if base_slug:
-            return f"{base_slug}_{unique_token}"
-        return unique_token
+
+        timestamp = datetime.now().strftime("%d%m%Y_%H%M")
+
+        folder_slug = f"{base_slug}_{timestamp}" if base_slug else timestamp
+        file_slug = base_slug or timestamp
+
+        return folder_slug, file_slug
 
     def _slugify_name(self, name: str) -> str:
         normalized = unicodedata.normalize("NFKD", name)

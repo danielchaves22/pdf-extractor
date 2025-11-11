@@ -11,6 +11,8 @@ Este módulo processa as fichas financeiras quadrimestrais e gera arquivos CSV p
 
 A janela mantém um painel de logs para acompanhar o andamento da extração.
 
+> ℹ️ Na aba **⚙️ Configurações** é possível definir, de forma independente, como interpretar a parte decimal das horas extras dos cartões e das horas trabalhadas/faltas. Escolha entre considerar os valores como decimais ou como minutos (`00-59`).
+
 ## 🧮 Regras de extração
 
 - Cada página é dividida em blocos de quatro meses. O último bloco do ano possui uma coluna adicional de totais que é ignorada.
@@ -18,7 +20,7 @@ A janela mantém um painel de logs para acompanhar o andamento da extração.
 - Para o `PROVENTOS.csv`, são coletados os valores da verba **`3123 - Base INSS (Folha)`** na coluna `Valor`. Se o mês estiver ausente no PDF, o resultado é preenchido com `0`.
 - Para o `ADIC. INSALUBRIDADE PAGO.csv`, são utilizados os valores da verba **`8 - Insalubridade`** na coluna `Valor`, seguindo a mesma regra de preenchimento com `0` para meses não encontrados.
 - Para o `CARTÕES.csv`, são utilizados os valores da verba **`6 - Horas Extras 50%`** na coluna `Comp.`. Meses que não apresentarem essa verba são preenchidos com `0`.
-- Para o `HORAS TRABALHADAS.csv`, a coluna `HORAS TRAB.` usa os valores da verba **`1 - Salário`** (coluna `Comp.`) e a coluna `FALTAS` usa os valores da verba **`952 - Falta Injustifica`** (coluna `Comp.`). Ambos aplicam a conversão de minutos para centesimal quando configurado nas opções do projeto.
+- Para o `HORAS TRABALHADAS.csv`, a coluna `HORAS TRAB.` usa os valores da verba **`1 - Salário`** (coluna `Comp.`) e a coluna `FALTAS` usa os valores da verba **`952 - Falta Injustifica`** (coluna `Comp.`). Ambos aplicam a conversão de minutos para centesimal quando configurado especificamente para "horas trabalhadas/faltas" nas opções do projeto.
 - Meses fora do intervalo solicitado são descartados, mesmo que existam no documento.
 - As colunas `FGTS`, `FGTS_REC.`, `CONTRIBUICAO_SOCIAL` e `CONTRIBUICAO_SOCIAL_REC.` são preenchidas com `N`, conforme especificação.
 

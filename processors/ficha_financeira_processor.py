@@ -222,9 +222,15 @@ class FichaFinanceiraProcessor:
                     if extra_code
                     else []
                 )
-                values = self._normalize_minutes_series(values, "HORA EXTRA 50")
+                values = self._normalize_minutes_series(
+                    values,
+                    "HORA EXTRA 50",
+                    config_key="cartoes_time_mode",
+                )
                 extra_values = self._normalize_minutes_series(
-                    extra_values, "HORA EXTRA 100"
+                    extra_values,
+                    "HORA EXTRA 100",
+                    config_key="cartoes_time_mode",
                 )
                 self._write_cartoes_csv(output_path, months_range, values, extra_values)
             elif writer == "horas_trabalhadas":
@@ -247,11 +253,18 @@ class FichaFinanceiraProcessor:
                     else []
                 )
                 horas_values = self._normalize_minutes_series(
-                    horas_values, "HORAS TRABALHADAS"
+                    horas_values,
+                    "HORAS TRABALHADAS",
+                    config_key="horas_trabalhadas_time_mode",
+                    fallback_key="cartoes_time_mode",
                 )
                 faltas_values = self._normalize_minutes_series(
-                    faltas_values, "FALTAS"
+                    faltas_values,
+                    "FALTAS",
+                    config_key="horas_trabalhadas_time_mode",
+                    fallback_key="cartoes_time_mode",
                 )
+                values = horas_values
                 self._write_horas_trabalhadas_csv(
                     output_path, months_range, horas_values, faltas_values
                 )
@@ -614,25 +627,24 @@ class FichaFinanceiraProcessor:
 
         return results
 
-    def _normalize_extra_hours_series(
-        self,
-        series: Iterable[Tuple[int, int, Decimal]],
-        label: str,
-    ) -> List[Tuple[int, int, Decimal]]:
-        return self._normalize_minutes_series(series, label)
-
     def _normalize_minutes_series(
         self,
         series: Iterable[Tuple[int, int, Decimal]],
         label: str,
+        *,
+        config_key: str,
+        fallback_key: Optional[str] = None,
     ) -> List[Tuple[int, int, Decimal]]:
         normalized: List[Tuple[int, int, Decimal]] = []
 
-        convert_minutes = self._should_convert_extra_hours_minutes()
+        convert_minutes = self._should_convert_minutes(
+            config_key=config_key,
+            fallback_key=fallback_key,
+        )
 
         for year, month, value in series:
             converted = (
-                self._convert_extra_hours_minutes(value)
+                self._convert_minutes_value(value)
                 if convert_minutes
                 else value
             )
@@ -647,16 +659,22 @@ class FichaFinanceiraProcessor:
 
         return normalized
 
-    def _should_convert_extra_hours_minutes(self) -> bool:
-        mode = str(
-            self._config.get(
-                "cartoes_time_mode",
-                self.CARTOES_TIME_MODE_DECIMAL,
-            )
-        ).lower()
-        return mode == self.CARTOES_TIME_MODE_MINUTES
+    def _should_convert_minutes(
+        self,
+        *,
+        config_key: str,
+        fallback_key: Optional[str] = None,
+    ) -> bool:
+        mode = self._config.get(config_key)
+        if mode is None and fallback_key:
+            mode = self._config.get(fallback_key)
 
-    def _convert_extra_hours_minutes(self, value: Decimal) -> Decimal:
+        if mode is None:
+            mode = self.CARTOES_TIME_MODE_DECIMAL
+
+        return str(mode).lower() == self.CARTOES_TIME_MODE_MINUTES
+
+    def _convert_minutes_value(self, value: Decimal) -> Decimal:
         if value == Decimal("0"):
             return value
 

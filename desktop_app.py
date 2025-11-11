@@ -989,6 +989,7 @@ class FichaFinanceiraBatchThread(QThread):
         output_dir: str,
         max_workers: int,
         cartoes_time_mode: str,
+        horas_trabalhadas_time_mode: str,
     ):
         super().__init__()
         self.pdf_files = [str(path) for path in pdf_files]
@@ -997,12 +998,18 @@ class FichaFinanceiraBatchThread(QThread):
         self.output_dir = Path(output_dir)
         self.max_workers = max(1, max_workers)
         self.cartoes_time_mode = cartoes_time_mode
+        self.horas_trabalhadas_time_mode = (
+            horas_trabalhadas_time_mode
+            if horas_trabalhadas_time_mode
+            else cartoes_time_mode
+        )
 
     def run(self):
         processor = FichaFinanceiraProcessor(
             log_callback=self._emit_log,
             config={
-                "cartoes_time_mode": self.cartoes_time_mode
+                "cartoes_time_mode": self.cartoes_time_mode,
+                "horas_trabalhadas_time_mode": self.horas_trabalhadas_time_mode,
             },
         )
 
@@ -1819,6 +1826,11 @@ class MainWindow(QMainWindow):
             if self.project_model == ProjectManager.MODEL_FICHA
             else ""
         )
+        self.horas_trabalhadas_time_mode = (
+            FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL
+            if self.project_model == ProjectManager.MODEL_FICHA
+            else ""
+        )
 
         # Gerenciador de persistência
         self.persistence = PersistenceManager(project_id=self.project.project_id)
@@ -2295,6 +2307,48 @@ class MainWindow(QMainWindow):
 
             layout.addWidget(cartoes_group)
 
+            horas_trab_group = QGroupBox(
+                "⏰ Formato das horas trabalhadas e faltas"
+            )
+            horas_trab_layout = QVBoxLayout(horas_trab_group)
+
+            horas_trab_desc = QLabel(
+                "Os mesmos PDFs podem registrar as horas trabalhadas e faltas "
+                "com a parte decimal representando minutos. Configure abaixo "
+                "como interpretar os valores para o arquivo HORAS TRABALHADAS.csv."
+            )
+            horas_trab_desc.setStyleSheet("color: #888;")
+            horas_trab_desc.setWordWrap(True)
+            horas_trab_layout.addWidget(horas_trab_desc)
+
+            self.horas_trabalhadas_time_mode_combo = QComboBox()
+            self.horas_trabalhadas_time_mode_combo.addItem(
+                "Decimais (padrão)",
+                FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL,
+            )
+            self.horas_trabalhadas_time_mode_combo.addItem(
+                "Minutos (00-59)",
+                FichaFinanceiraProcessor.CARTOES_TIME_MODE_MINUTES,
+            )
+            default_horas_mode = (
+                self.horas_trabalhadas_time_mode
+                or self.cartoes_time_mode
+                or FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL
+            )
+            default_index = self.horas_trabalhadas_time_mode_combo.findData(
+                default_horas_mode
+            )
+            if default_index >= 0:
+                self.horas_trabalhadas_time_mode_combo.setCurrentIndex(
+                    default_index
+                )
+            self.horas_trabalhadas_time_mode_combo.currentIndexChanged.connect(
+                self._on_horas_trabalhadas_time_mode_changed
+            )
+            horas_trab_layout.addWidget(self.horas_trabalhadas_time_mode_combo)
+
+            layout.addWidget(horas_trab_group)
+
         self.tab_widget.addTab(settings_widget, "⚙️ Configurações")
     
     def _get_processor(self):
@@ -2528,7 +2582,8 @@ class MainWindow(QMainWindow):
             end_period,
             self.trabalho_dir,
             self.max_threads,
-            self.cartoes_time_mode
+            self.cartoes_time_mode,
+            self.horas_trabalhadas_time_mode,
         )
 
         self.processor_thread.progress_updated.connect(self.handle_progress_update)
@@ -2831,6 +2886,33 @@ class MainWindow(QMainWindow):
 
         self._on_config_changed()
 
+    def _on_horas_trabalhadas_time_mode_changed(self):
+        """Atualiza modo de interpretação das horas trabalhadas e faltas."""
+        if not hasattr(self, 'horas_trabalhadas_time_mode_combo'):
+            return
+
+        mode = self.horas_trabalhadas_time_mode_combo.currentData()
+        if mode:
+            self.horas_trabalhadas_time_mode = str(mode)
+        else:
+            self.horas_trabalhadas_time_mode = (
+                FichaFinanceiraProcessor.CARTOES_TIME_MODE_DECIMAL
+            )
+
+        if (
+            self.horas_trabalhadas_time_mode
+            == FichaFinanceiraProcessor.CARTOES_TIME_MODE_MINUTES
+        ):
+            self.add_log_message(
+                "Configuração aplicada: horas trabalhadas e faltas tratadas como minutos (00-59)."
+            )
+        else:
+            self.add_log_message(
+                "Configuração aplicada: horas trabalhadas e faltas tratadas como decimais."
+            )
+
+        self._on_config_changed()
+
     def _on_config_changed(self):
         """Callback genérico para mudanças de configuração"""
         # Verifica se save_timer existe antes de usar
@@ -2848,6 +2930,9 @@ class MainWindow(QMainWindow):
 
         if self.project_model == ProjectManager.MODEL_FICHA:
             config['cartoes_time_mode'] = self.cartoes_time_mode
+            config['horas_trabalhadas_time_mode'] = (
+                self.horas_trabalhadas_time_mode
+            )
 
         self.persistence.save_config(config)
     
@@ -2887,6 +2972,26 @@ class MainWindow(QMainWindow):
                         self.cartoes_time_mode_combo.blockSignals(True)
                         self.cartoes_time_mode_combo.setCurrentIndex(index)
                         self.cartoes_time_mode_combo.blockSignals(False)
+
+            if (
+                self.project_model == ProjectManager.MODEL_FICHA
+                and config.get('horas_trabalhadas_time_mode')
+            ):
+                self.horas_trabalhadas_time_mode = config[
+                    'horas_trabalhadas_time_mode'
+                ]
+                if hasattr(self, 'horas_trabalhadas_time_mode_combo'):
+                    index = self.horas_trabalhadas_time_mode_combo.findData(
+                        self.horas_trabalhadas_time_mode
+                    )
+                    if index >= 0:
+                        self.horas_trabalhadas_time_mode_combo.blockSignals(True)
+                        self.horas_trabalhadas_time_mode_combo.setCurrentIndex(
+                            index
+                        )
+                        self.horas_trabalhadas_time_mode_combo.blockSignals(
+                            False
+                        )
             
             # Carrega histórico
             self.processing_history = self.persistence.load_all_history_entries()

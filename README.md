@@ -141,6 +141,7 @@ C:/trabalho/folhas_pagamento/     ← MODELO_DIR
 
 - Após o splash screen, escolha entre **Recibo Modelo 1** (fluxo tradicional com Excel) ou **Ficha Financeira** (geração de CSVs).
 - O módulo de ficha financeira solicita o período desejado, os PDFs a serem processados e salva os arquivos `PROVENTOS.csv`, `ADIC. INSALUBRIDADE PAGO.csv`, `CARTÕES.csv` e `HORAS TRABALHADAS.csv` automaticamente na pasta do primeiro arquivo.
+- Na aba de configurações é possível definir separadamente se as horas extras dos cartões e se as horas trabalhadas/faltas devem interpretar a parte decimal como minutos (`00-59`) ou como fração decimal.
 - Cada módulo possui telas específicas, mantendo a rotina original intocada.
 
 ## 💻 Como Usar v4.0

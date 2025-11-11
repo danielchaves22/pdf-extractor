@@ -68,6 +68,7 @@ class FichaFinanceiraProcessor:
         "174-Ferias": {"column": 2, "search_prefix": "174"},
         "527-INSS-Comp": {"column": 1, "search_prefix": "527"},
         "527-INSS-Valor": {"column": 2, "search_prefix": "527"},
+        "952-FaltaInjustifica": {"column": 1, "search_prefix": "952"},
     }
 
     OUTPUT_SPECS: Tuple[Dict[str, object], ...] = (
@@ -84,6 +85,14 @@ class FichaFinanceiraProcessor:
             "writer": "cartoes",
             "extra_hours_code": "14-Horas100",
             "extra_hours_log": "CARTÕES - HORA EXTRA 100",
+        },
+        {
+            "code": "1-Salario",
+            "label": "HORAS TRABALHADAS",
+            "log": "HORAS TRABALHADAS - HORAS",
+            "writer": "horas_trabalhadas",
+            "faltas_code": "952-FaltaInjustifica",
+            "faltas_log": "HORAS TRABALHADAS - FALTAS",
         },
     )
 
@@ -213,13 +222,39 @@ class FichaFinanceiraProcessor:
                     if extra_code
                     else []
                 )
-                values = self._normalize_extra_hours_series(
-                    values, "HORA EXTRA 50"
-                )
-                extra_values = self._normalize_extra_hours_series(
+                values = self._normalize_minutes_series(values, "HORA EXTRA 50")
+                extra_values = self._normalize_minutes_series(
                     extra_values, "HORA EXTRA 100"
                 )
                 self._write_cartoes_csv(output_path, months_range, values, extra_values)
+            elif writer == "horas_trabalhadas":
+                horas_values = self._collect_values_for_code(
+                    aggregated,
+                    spec["code"],
+                    months_range,
+                    spec["log"],
+                )
+                faltas_code = spec.get("faltas_code")
+                faltas_log = spec.get("faltas_log", spec["log"])
+                faltas_values = (
+                    self._collect_values_for_code(
+                        aggregated,
+                        faltas_code,
+                        months_range,
+                        faltas_log,
+                    )
+                    if faltas_code
+                    else []
+                )
+                horas_values = self._normalize_minutes_series(
+                    horas_values, "HORAS TRABALHADAS"
+                )
+                faltas_values = self._normalize_minutes_series(
+                    faltas_values, "FALTAS"
+                )
+                self._write_horas_trabalhadas_csv(
+                    output_path, months_range, horas_values, faltas_values
+                )
             else:
                 values = self._collect_values_for_code(
                     aggregated,
@@ -580,6 +615,13 @@ class FichaFinanceiraProcessor:
         return results
 
     def _normalize_extra_hours_series(
+        self,
+        series: Iterable[Tuple[int, int, Decimal]],
+        label: str,
+    ) -> List[Tuple[int, int, Decimal]]:
+        return self._normalize_minutes_series(series, label)
+
+    def _normalize_minutes_series(
         self,
         series: Iterable[Tuple[int, int, Decimal]],
         label: str,
@@ -972,6 +1014,45 @@ class FichaFinanceiraProcessor:
                     row.append(self._format_decimal(valor_100))
 
                 writer.writerow(row)
+
+    def _write_horas_trabalhadas_csv(
+        self,
+        output_path: Path,
+        months: Iterable[Tuple[int, int]],
+        horas: Iterable[Tuple[int, int, Decimal]],
+        faltas: Iterable[Tuple[int, int, Decimal]],
+    ) -> None:
+        horas_map = {(year, month): value for year, month, value in horas}
+        faltas_map = {(year, month): value for year, month, value in faltas}
+
+        ordered_months: List[Tuple[int, int]] = list(months)
+
+        additional_months = [
+            key
+            for key in set(horas_map.keys()) | set(faltas_map.keys())
+            if key not in ordered_months
+        ]
+        if additional_months:
+            ordered_months.extend(sorted(additional_months))
+
+        header = ["PERIODO", "HORAS TRAB.", "FALTAS"]
+
+        with output_path.open("w", newline="", encoding="utf-8") as csv_file:
+            writer = csv.writer(csv_file, delimiter=";", lineterminator="\n")
+            writer.writerow(header)
+
+            for year, month in ordered_months:
+                mes_ano = f"{month:02d}/{year}"
+                horas_valor = horas_map.get((year, month), Decimal("0"))
+                faltas_valor = faltas_map.get((year, month), Decimal("0"))
+
+                writer.writerow(
+                    [
+                        mes_ano,
+                        self._format_decimal(horas_valor),
+                        self._format_decimal(faltas_valor),
+                    ]
+                )
 
     def _iterate_months(self, start: date, end: date) -> Iterable[Tuple[int, int]]:
         current_year = start.year

@@ -1,6 +1,6 @@
 # 📄 Módulo "Ficha Financeira"
 
-Este módulo processa as fichas financeiras quadrimestrais e gera arquivos CSV padronizados. A implementação atual cria três arquivos (`PROVENTOS.csv`, `ADIC. INSALUBRIDADE PAGO.csv` e `CARTÕES.csv`), seguindo os exemplos disponíveis na pasta `NOVO_MODULO_FICHA_FINANCEIRA`.
+Este módulo processa as fichas financeiras quadrimestrais e gera arquivos CSV padronizados. A implementação atual cria quatro arquivos (`PROVENTOS.csv`, `ADIC. INSALUBRIDADE PAGO.csv`, `CARTÕES.csv` e `HORAS TRABALHADAS.csv`), seguindo os exemplos disponíveis na pasta `NOVO_MODULO_FICHA_FINANCEIRA`.
 
 ## 🧭 Fluxo de uso na interface desktop
 
@@ -18,6 +18,7 @@ A janela mantém um painel de logs para acompanhar o andamento da extração.
 - Para o `PROVENTOS.csv`, são coletados os valores da verba **`3123 - Base INSS (Folha)`** na coluna `Valor`. Se o mês estiver ausente no PDF, o resultado é preenchido com `0`.
 - Para o `ADIC. INSALUBRIDADE PAGO.csv`, são utilizados os valores da verba **`8 - Insalubridade`** na coluna `Valor`, seguindo a mesma regra de preenchimento com `0` para meses não encontrados.
 - Para o `CARTÕES.csv`, são utilizados os valores da verba **`6 - Horas Extras 50%`** na coluna `Comp.`. Meses que não apresentarem essa verba são preenchidos com `0`.
+- Para o `HORAS TRABALHADAS.csv`, a coluna `HORAS TRAB.` usa os valores da verba **`1 - Salário`** (coluna `Comp.`) e a coluna `FALTAS` usa os valores da verba **`952 - Falta Injustifica`** (coluna `Comp.`). Ambos aplicam a conversão de minutos para centesimal quando configurado nas opções do projeto.
 - Meses fora do intervalo solicitado são descartados, mesmo que existam no documento.
 - As colunas `FGTS`, `FGTS_REC.`, `CONTRIBUICAO_SOCIAL` e `CONTRIBUICAO_SOCIAL_REC.` são preenchidas com `N`, conforme especificação.
 
@@ -31,7 +32,9 @@ MES_ANO;VALOR;FGTS;FGTS_REC.;CONTRIBUICAO_SOCIAL;CONTRIBUICAO_SOCIAL_REC.;;;;
 
 Cada linha representa um mês no formato `MM/AAAA`, com os valores convertidos para vírgula como separador decimal.
 
-O arquivo `CARTÕES.csv` possui apenas duas colunas (`PERIODO` e `HORAS EXTRAS`), usando o mesmo separador `;`.
+O arquivo `CARTÕES.csv` possui duas ou três colunas (`PERIODO`, `HORA EXTRA 50%` e opcionalmente `HORA EXTRA 100%`), usando o mesmo separador `;`.
+
+O arquivo `HORAS TRABALHADAS.csv` possui três colunas (`PERIODO`, `HORAS TRAB.` e `FALTAS`), seguindo o padrão de separador `;` e os mesmos ajustes de conversão de minutos para centesimal quando habilitados.
 
 ## 🔁 Reutilização futura
 

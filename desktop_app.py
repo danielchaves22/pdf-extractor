@@ -1003,10 +1003,12 @@ class FichaFinanceiraBatchThread(QThread):
 
         try:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                aggregate_future = executor.submit(self._process_all_pdfs, self.pdf_files)
+
                 for pdf_file in self.pdf_files:
                     name = Path(pdf_file).name
                     self.progress_updated.emit(name, 5, "Lendo PDF...")
-                    futures.append((name, executor.submit(self._process_single_pdf, pdf_file)))
+                    futures.append((name, aggregate_future))
 
                 for name, future in futures:
                     try:
@@ -1024,7 +1026,7 @@ class FichaFinanceiraBatchThread(QThread):
     def _emit_log(self, message: str):
         self.log_message.emit(message)
 
-    def _process_single_pdf(self, pdf_path: str) -> Dict[str, object]:
+    def _process_all_pdfs(self, pdf_paths: List[str]) -> Dict[str, object]:
         processor = FichaFinanceiraProcessor(
             log_callback=self._emit_log,
             config={
@@ -1033,7 +1035,7 @@ class FichaFinanceiraBatchThread(QThread):
         )
 
         result = processor.generate_csvs(
-            [Path(pdf_path)],
+            [Path(path) for path in pdf_paths],
             self.start_period,
             self.end_period,
             self.output_dir,
@@ -1052,7 +1054,7 @@ class FichaFinanceiraBatchThread(QThread):
             'person_name': result.get('person_name'),
             'outputs': sanitized_outputs,
             'output_folder': str(result.get('output_folder')) if result.get('output_folder') else None,
-            'pdf_count': 1,
+            'pdf_count': len(pdf_paths),
             'period': {
                 'start': {'year': self.start_period.year, 'month': self.start_period.month},
                 'end': {'year': self.end_period.year, 'month': self.end_period.month},

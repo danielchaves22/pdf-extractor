@@ -999,6 +999,32 @@ class FichaFinanceiraBatchThread(QThread):
         self.cartoes_time_mode = cartoes_time_mode
 
     def run(self):
+        futures = []
+
+        try:
+            with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                for pdf_file in self.pdf_files:
+                    name = Path(pdf_file).name
+                    self.progress_updated.emit(name, 5, "Lendo PDF...")
+                    futures.append((name, executor.submit(self._process_single_pdf, pdf_file)))
+
+                for name, future in futures:
+                    try:
+                        payload = future.result()
+                        self.progress_updated.emit(name, 100, "✅ Incluído na consolidação")
+                        self.pdf_completed.emit(name, payload)
+                    except Exception as exc:
+                        error_message = f"❌ Erro: {exc}"
+                        self.progress_updated.emit(name, 0, error_message)
+                        self.log_message.emit(f"Erro durante o processamento de {name}: {exc}")
+                        self.pdf_completed.emit(name, {'success': False, 'error': str(exc)})
+        finally:
+            self.batch_completed.emit()
+
+    def _emit_log(self, message: str):
+        self.log_message.emit(message)
+
+    def _process_single_pdf(self, pdf_path: str) -> Dict[str, object]:
         processor = FichaFinanceiraProcessor(
             log_callback=self._emit_log,
             config={
@@ -1006,56 +1032,34 @@ class FichaFinanceiraBatchThread(QThread):
             },
         )
 
-        try:
-            for pdf_file in self.pdf_files:
-                name = Path(pdf_file).name
-                self.progress_updated.emit(name, 5, "Lendo PDF...")
+        result = processor.generate_csvs(
+            [Path(pdf_path)],
+            self.start_period,
+            self.end_period,
+            self.output_dir,
+            max_workers=self.max_workers,
+        )
 
-            result = processor.generate_csvs(
-                [Path(path) for path in self.pdf_files],
-                self.start_period,
-                self.end_period,
-                self.output_dir,
-                max_workers=self.max_workers,
-            )
+        sanitized_outputs = []
+        for item in result.get('outputs', []):
+            sanitized_item = dict(item)
+            if sanitized_item.get('path') is not None:
+                sanitized_item['path'] = str(sanitized_item['path'])
+            sanitized_outputs.append(sanitized_item)
 
-            sanitized_outputs = []
-            for item in result.get('outputs', []):
-                sanitized_outputs.append({
-                    'label': item.get('label'),
-                    'path': str(item.get('path')),
-                })
+        payload = {
+            'success': True,
+            'person_name': result.get('person_name'),
+            'outputs': sanitized_outputs,
+            'output_folder': str(result.get('output_folder')) if result.get('output_folder') else None,
+            'pdf_count': 1,
+            'period': {
+                'start': {'year': self.start_period.year, 'month': self.start_period.month},
+                'end': {'year': self.end_period.year, 'month': self.end_period.month},
+            },
+        }
 
-            for pdf_file in self.pdf_files:
-                name = Path(pdf_file).name
-                self.progress_updated.emit(name, 100, "✅ Incluído na consolidação")
-
-            payload = {
-                'success': True,
-                'person_name': result.get('person_name'),
-                'outputs': sanitized_outputs,
-                'output_folder': str(result.get('output_folder')) if result.get('output_folder') else None,
-                'pdf_count': len(self.pdf_files),
-                'period': {
-                    'start': {'year': self.start_period.year, 'month': self.start_period.month},
-                    'end': {'year': self.end_period.year, 'month': self.end_period.month},
-                },
-            }
-
-            self.pdf_completed.emit('Ficha Financeira', payload)
-        except Exception as exc:
-            error_message = f"❌ Erro: {exc}"
-            for pdf_file in self.pdf_files:
-                name = Path(pdf_file).name
-                self.progress_updated.emit(name, 0, error_message)
-
-            self.log_message.emit(f"Erro durante o processamento: {exc}")
-            self.pdf_completed.emit('Ficha Financeira', {'success': False, 'error': str(exc)})
-        finally:
-            self.batch_completed.emit()
-
-    def _emit_log(self, message: str):
-        self.log_message.emit(message)
+        return payload
 
 
 class DropZoneWidget(QWidget):

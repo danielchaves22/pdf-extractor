@@ -78,6 +78,79 @@ except ImportError:
     print("Certifique-se de que o arquivo pdf_processor_core.py está na mesma pasta.")
     sys.exit(1)
 
+
+def get_ficha_results_from_payload(result_data: Optional[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Extrai a lista de resultados por PDF do payload da ficha financeira."""
+
+    if not result_data:
+        return []
+
+    results = result_data.get('results')
+    if isinstance(results, list):
+        return results
+    return []
+
+
+def flatten_ficha_outputs(result_data: Optional[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Agrupa os CSVs gerados, preservando a origem de cada PDF."""
+
+    results = get_ficha_results_from_payload(result_data)
+    if results:
+        flattened: List[Dict[str, object]] = []
+        for result in results:
+            pdf_file = result.get('pdf_file')
+            output_folder = result.get('output_folder')
+            person_name = result.get('person_name')
+            for item in result.get('outputs', []):
+                flattened.append(
+                    {
+                        'label': item.get('label'),
+                        'path': item.get('path'),
+                        'pdf_file': pdf_file,
+                        'output_folder': output_folder,
+                        'person_name': person_name,
+                    }
+                )
+        return flattened
+
+    legacy_outputs = (result_data or {}).get('outputs', [])
+    return [dict(item) for item in legacy_outputs]
+
+
+def collect_ficha_person_names(result_data: Optional[Dict[str, object]]) -> List[str]:
+    """Retorna a lista de nomes identificados no processamento da ficha."""
+
+    names: List[str] = []
+    for result in get_ficha_results_from_payload(result_data):
+        name = result.get('person_name')
+        if name and name not in names:
+            names.append(name)
+
+    if not names and result_data:
+        legacy = result_data.get('person_name')
+        if legacy:
+            names.append(legacy)
+
+    return names
+
+
+def collect_ficha_output_folders(result_data: Optional[Dict[str, object]]) -> List[str]:
+    """Lista as pastas geradas para cada PDF processado."""
+
+    folders: List[str] = []
+    for result in get_ficha_results_from_payload(result_data):
+        folder = result.get('output_folder')
+        if folder and folder not in folders:
+            folders.append(folder)
+
+    if not folders and result_data:
+        legacy_folder = result_data.get('output_folder')
+        if legacy_folder:
+            folders.append(legacy_folder)
+
+    return folders
+
+
 class SplashScreen(QSplashScreen):
     """Splash screen moderna com progresso de carregamento"""
     
@@ -1018,7 +1091,7 @@ class FichaFinanceiraBatchThread(QThread):
                 name = Path(pdf_file).name
                 self.progress_updated.emit(name, 5, "Lendo PDF...")
 
-            result = processor.generate_csvs(
+            results = processor.generate_csvs(
                 [Path(path) for path in self.pdf_files],
                 self.start_period,
                 self.end_period,
@@ -1026,23 +1099,57 @@ class FichaFinanceiraBatchThread(QThread):
                 max_workers=self.max_workers,
             )
 
-            sanitized_outputs = []
-            for item in result.get('outputs', []):
-                sanitized_outputs.append({
-                    'label': item.get('label'),
-                    'path': str(item.get('path')),
-                })
+            sanitized_results: List[Dict[str, object]] = []
+            flattened_outputs: List[Dict[str, object]] = []
 
-            for pdf_file in self.pdf_files:
-                name = Path(pdf_file).name
-                self.progress_updated.emit(name, 100, "✅ Incluído na consolidação")
+            for original_path, result in zip(self.pdf_files, results):
+                pdf_path = Path(result.get('pdf_path', original_path))
+                output_folder_path = result.get('output_folder')
+                output_folder = str(output_folder_path) if output_folder_path else None
+
+                sanitized_outputs = []
+                for item in result.get('outputs', []):
+                    output_path = item.get('path')
+                    sanitized_item = {
+                        'label': item.get('label'),
+                        'path': str(output_path),
+                    }
+                    sanitized_outputs.append(sanitized_item)
+                    flattened_outputs.append(
+                        {
+                            'label': item.get('label'),
+                            'path': str(output_path),
+                            'pdf_file': str(pdf_path),
+                            'output_folder': output_folder,
+                            'person_name': result.get('person_name'),
+                        }
+                    )
+
+                sanitized_results.append(
+                    {
+                        'pdf_file': str(pdf_path),
+                        'person_name': result.get('person_name'),
+                        'output_folder': output_folder,
+                        'folder_slug': result.get('folder_slug'),
+                        'outputs': sanitized_outputs,
+                    }
+                )
+
+            for result in sanitized_results:
+                pdf_name = Path(result['pdf_file']).name if result.get('pdf_file') else 'PDF'
+                folder = result.get('output_folder')
+                message = "✅ CSVs gerados"
+                if folder:
+                    message = f"✅ CSVs gerados em {folder}"
+                self.progress_updated.emit(pdf_name, 100, message)
 
             payload = {
                 'success': True,
-                'person_name': result.get('person_name'),
-                'outputs': sanitized_outputs,
-                'output_folder': str(result.get('output_folder')) if result.get('output_folder') else None,
-                'pdf_count': len(self.pdf_files),
+                'person_name': sanitized_results[0].get('person_name') if sanitized_results else None,
+                'outputs': flattened_outputs,
+                'results': sanitized_results,
+                'output_folder': sanitized_results[0].get('output_folder') if sanitized_results else None,
+                'pdf_count': len(sanitized_results),
                 'period': {
                     'start': {'year': self.start_period.year, 'month': self.start_period.month},
                     'end': {'year': self.end_period.year, 'month': self.end_period.month},
@@ -1350,10 +1457,15 @@ class HistoryItemWidget(QWidget):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(3)
         
-        ficha_outputs = entry.result_data.get('outputs') if entry.result_data else None
+        ficha_results = get_ficha_results_from_payload(entry.result_data)
+        ficha_outputs = flatten_ficha_outputs(entry.result_data) if entry.result_data else []
 
         if entry.success and ficha_outputs:
-            person_name = entry.result_data.get('person_name') or Path(entry.pdf_file).stem
+            names = collect_ficha_person_names(entry.result_data)
+            if names:
+                person_name = ", ".join(names)
+            else:
+                person_name = Path(entry.pdf_file).stem
             display_name = f"Ficha Financeira • {person_name}"
         elif entry.success and entry.result_data.get('arquivo_final'):
             display_name = Path(entry.result_data['arquivo_final']).stem
@@ -1377,7 +1489,7 @@ class HistoryItemWidget(QWidget):
             if ficha_outputs:
                 count_outputs = len(ficha_outputs)
                 result_text = f"✓ {count_outputs} arquivo{'s' if count_outputs != 1 else ''} gerado{'s' if count_outputs != 1 else ''}"
-                pdf_count = entry.result_data.get('pdf_count')
+                pdf_count = entry.result_data.get('pdf_count') or len(ficha_results)
                 if pdf_count:
                     result_text += f" • {pdf_count} PDF{'s' if pdf_count != 1 else ''} consolidados"
             else:
@@ -1468,9 +1580,12 @@ class HistoryDetailsDialog(QDialog):
         header_layout = QVBoxLayout(header_frame)
         
         # Título (simples, sem indicação de lote)
-        title_text = f"📄 {Path(entry.pdf_file).stem}"
-        if entry.success and entry.result_data.get('outputs') and entry.result_data.get('person_name'):
-            title_text = f"📄 {entry.result_data['person_name']}"
+        ficha_names = collect_ficha_person_names(entry.result_data)
+        if entry.success and ficha_names:
+            title_core = ", ".join(ficha_names)
+        else:
+            title_core = Path(entry.pdf_file).stem
+        title_text = f"📄 {title_core}"
         if entry.has_attention:
             title_text += " ⚠️"
         
@@ -1491,11 +1606,15 @@ class HistoryDetailsDialog(QDialog):
         
         info_parts.append(f"🕒 {entry.timestamp.strftime('%d/%m/%Y %H:%M:%S')}")
         
+        ficha_results = get_ficha_results_from_payload(entry.result_data)
+        ficha_outputs = flatten_ficha_outputs(entry.result_data)
+
         if entry.success and entry.result_data:
-            if entry.result_data.get('outputs'):
-                outputs = entry.result_data['outputs']
-                info_parts.append(f"📂 {len(outputs)} arquivo{'s' if len(outputs) != 1 else ''} gerado{'s' if len(outputs) != 1 else ''}")
-                pdf_count = entry.result_data.get('pdf_count')
+            if ficha_outputs:
+                info_parts.append(
+                    f"📂 {len(ficha_outputs)} arquivo{'s' if len(ficha_outputs) != 1 else ''} gerado{'s' if len(ficha_outputs) != 1 else ''}"
+                )
+                pdf_count = entry.result_data.get('pdf_count') or len(ficha_results)
                 if pdf_count:
                     info_parts.append(f"📄 {pdf_count} PDF{'s' if pdf_count != 1 else ''} consolidados")
             else:
@@ -1654,21 +1773,30 @@ class HistoryDetailsDialog(QDialog):
 
             layout.addWidget(attention_group)
 
-        if entry.success and entry.result_data.get('outputs'):
+        if entry.success and ficha_results:
             outputs_group = QGroupBox("📂 Arquivos gerados")
             outputs_layout = QVBoxLayout(outputs_group)
 
-            for item in entry.result_data.get('outputs', []):
-                label = QLabel(f"• {item.get('label', 'Arquivo')}: {item.get('path', '')}")
-                label.setStyleSheet("color: #ccc; font-size: 11px;")
-                label.setWordWrap(True)
-                outputs_layout.addWidget(label)
+            for result in ficha_results:
+                pdf_file = result.get('pdf_file')
+                pdf_name = Path(pdf_file).name if pdf_file else result.get('person_name', 'PDF')
+                header = QLabel(f"📄 {pdf_name}")
+                header.setStyleSheet("color: #fff; font-weight: bold; font-size: 11px;")
+                header.setWordWrap(True)
+                outputs_layout.addWidget(header)
 
-            if entry.result_data.get('output_folder'):
-                folder_label = QLabel(f"📁 Pasta: {entry.result_data['output_folder']}")
-                folder_label.setStyleSheet("color: #888; font-size: 10px; font-style: italic;")
-                folder_label.setWordWrap(True)
-                outputs_layout.addWidget(folder_label)
+                for item in result.get('outputs', []):
+                    label = QLabel(f"• {item.get('label', 'Arquivo')}: {item.get('path', '')}")
+                    label.setStyleSheet("color: #ccc; font-size: 11px; margin-left: 15px;")
+                    label.setWordWrap(True)
+                    outputs_layout.addWidget(label)
+
+                folder = result.get('output_folder')
+                if folder:
+                    folder_label = QLabel(f"📁 Pasta: {folder}")
+                    folder_label.setStyleSheet("color: #888; font-size: 10px; font-style: italic; margin-left: 15px;")
+                    folder_label.setWordWrap(True)
+                    outputs_layout.addWidget(folder_label)
 
             layout.addWidget(outputs_group)
 
@@ -2670,13 +2798,38 @@ class MainWindow(QMainWindow):
         if self.project_model == ProjectManager.MODEL_FICHA:
             recent_entry = self.processing_history[-1] if self.processing_history else None
             if recent_entry and recent_entry.success:
-                pdf_count = recent_entry.result_data.get('pdf_count', len(self.selected_files))
-                outputs = recent_entry.result_data.get('outputs', [])
-                output_lines = "\n".join(f"• {item['label']}: {item['path']}" for item in outputs)
-                message = (
-                    f"{pdf_count} PDF{'s' if pdf_count != 1 else ''} consolidados com sucesso.\n\n"
-                    f"Arquivos gerados:\n{output_lines}" if outputs else "Nenhum arquivo foi gerado para o período informado."
-                )
+                ficha_results = get_ficha_results_from_payload(recent_entry.result_data)
+                flattened_outputs = flatten_ficha_outputs(recent_entry.result_data)
+                pdf_count = recent_entry.result_data.get('pdf_count') or len(ficha_results) or len(self.selected_files)
+
+                if ficha_results:
+                    lines: List[str] = [
+                        f"{pdf_count} PDF{'s' if pdf_count != 1 else ''} processado{'s' if pdf_count != 1 else ''} com sucesso.",
+                        "",
+                        "Detalhes por PDF:",
+                    ]
+                    for result in ficha_results:
+                        pdf_file = result.get('pdf_file')
+                        pdf_name = Path(pdf_file).name if pdf_file else result.get('person_name', 'PDF')
+                        lines.append(f"• {pdf_name}")
+                        folder = result.get('output_folder')
+                        if result.get('outputs'):
+                            for item in result.get('outputs', []):
+                                lines.append(f"   - {item.get('label', 'Arquivo')}: {item.get('path', '')}")
+                        else:
+                            lines.append("   - Nenhum arquivo gerado para o período informado.")
+                        if folder:
+                            lines.append(f"   - Pasta: {folder}")
+                    message = "\n".join(lines)
+                else:
+                    output_lines = "\n".join(
+                        f"• {item['label']}: {item['path']}" for item in flattened_outputs
+                    )
+                    message = (
+                        f"{pdf_count} PDF{'s' if pdf_count != 1 else ''} processado{'s' if pdf_count != 1 else ''} com sucesso.\n\n"
+                        f"Arquivos gerados:\n{output_lines}" if flattened_outputs else "Nenhum arquivo foi gerado para o período informado."
+                    )
+
                 QMessageBox.information(
                     self,
                     "✅ Processamento concluído",
@@ -2782,14 +2935,18 @@ class MainWindow(QMainWindow):
     def open_data_file(self, entry: HistoryEntry):
         """Abre arquivo Excel de entrada do histórico"""
         try:
-            if entry.result_data.get('outputs'):
-                output_folder = entry.result_data.get('output_folder')
-                if output_folder:
-                    path_to_open = Path(output_folder)
+            ficha_results = get_ficha_results_from_payload(entry.result_data)
+            if ficha_results:
+                folders = collect_ficha_output_folders(entry.result_data)
+                if folders:
+                    path_to_open = Path(folders[0])
                 else:
-                    first_output = entry.result_data['outputs'][0]
-                    path_to_open = Path(first_output.get('path', ''))
-                    path_to_open = path_to_open.parent if path_to_open.is_file() else path_to_open
+                    flattened = flatten_ficha_outputs(entry.result_data)
+                    if not flattened:
+                        QMessageBox.warning(self, "Pasta não encontrada", "Não foi possível localizar a pasta dos arquivos gerados.")
+                        return
+                    first_output = Path(flattened[0].get('path', ''))
+                    path_to_open = first_output.parent if first_output.is_file() else first_output
 
                 if not path_to_open or not path_to_open.exists():
                     QMessageBox.warning(self, "Pasta não encontrada", "Não foi possível localizar a pasta dos arquivos gerados.")

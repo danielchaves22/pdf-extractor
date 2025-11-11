@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 import re
-import threading
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -153,7 +152,7 @@ class FichaFinanceiraProcessor:
     ) -> Dict[str, object]:
         """Processa PDFs e gera o arquivo PROVENTOS.csv."""
 
-        result = self.generate_csvs(
+        results = self.generate_csvs(
             pdf_paths=pdf_paths,
             start_period=start_period,
             end_period=end_period,
@@ -161,13 +160,14 @@ class FichaFinanceiraProcessor:
             max_workers=max_workers,
         )
 
-        for output in result["outputs"]:
-            if output["label"] == "PROVENTOS":
-                return {
-                    "person_name": result["person_name"],
-                    "output_path": output["path"],
-                    "months": output["months"],
-                }
+        for result in results:
+            for output in result.get("outputs", []):
+                if output["label"] == "PROVENTOS":
+                    return {
+                        "person_name": result.get("person_name"),
+                        "output_path": output["path"],
+                        "months": output["months"],
+                    }
 
         raise RuntimeError("Arquivo PROVENTOS não foi gerado.")
 
@@ -179,25 +179,93 @@ class FichaFinanceiraProcessor:
         output_dir: Path,
         *,
         max_workers: int = 1,
-    ) -> Dict[str, object]:
-        """Gera todos os CSVs configurados para a ficha financeira."""
+    ) -> List[Dict[str, object]]:
+        """Gera todos os CSVs configurados para a ficha financeira, por PDF."""
 
         if start_period > end_period:
             raise ValueError("Período inicial não pode ser maior que o final.")
 
-        aggregated, person_name = self._aggregate_pdfs(pdf_paths, max_workers=max_workers)
+        resolved_paths: List[Path] = []
+        for pdf_path in pdf_paths:
+            path = Path(pdf_path)
+            if not path.exists():
+                raise FileNotFoundError(f"Arquivo não encontrado: {path}")
+            resolved_paths.append(path)
 
-        self._apply_vacation_adjustments(aggregated)
+        if not resolved_paths:
+            raise ValueError("Informe ao menos um PDF para processamento.")
 
         months_range = list(self._iterate_months(start_period, end_period))
         output_dir_path = Path(output_dir)
         output_dir_path.mkdir(parents=True, exist_ok=True)
 
-        folder_slug = self._slugify_name(person_name)
+        effective_workers = max(1, min(max_workers, len(resolved_paths)))
 
-        target_dir = output_dir_path / folder_slug
-        target_dir.mkdir(parents=True, exist_ok=True)
+        def process_path(path: Path) -> Dict[str, object]:
+            self._log(f"📄 Lendo {path.name}")
+            parse_result = self._parse_pdf(path)
+            aggregated: Dict[str, NumberByMonth] = parse_result["values"]
 
+            person_name = parse_result.get("person_name")
+            if not person_name:
+                person_name = path.stem
+                self._log(
+                    f"⚠️ Nome não encontrado no PDF {path.name}. Utilizando o nome do arquivo como identificação."
+                )
+
+            self._apply_vacation_adjustments(aggregated)
+
+            folder_slug = self._slugify_name(path.stem)
+            target_dir = output_dir_path / folder_slug
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            self._log(
+                f"📁 Gerando CSVs do arquivo {path.name} na pasta {target_dir}"
+            )
+
+            outputs = self._generate_outputs_for_pdf(
+                aggregated,
+                months_range,
+                target_dir,
+                folder_slug,
+            )
+
+            self._log(
+                f"🏁 Conjunto de CSVs do arquivo {path.name} disponível em {target_dir}"
+            )
+
+            return {
+                "pdf_path": path,
+                "person_name": person_name,
+                "output_folder": target_dir,
+                "folder_slug": folder_slug,
+                "outputs": outputs,
+            }
+
+        results_by_path: Dict[Path, Dict[str, object]] = {}
+
+        if effective_workers == 1:
+            for path in resolved_paths:
+                results_by_path[path] = process_path(path)
+        else:
+            with ThreadPoolExecutor(max_workers=effective_workers) as executor:
+                futures = {
+                    executor.submit(process_path, path): path for path in resolved_paths
+                }
+
+                for future in as_completed(futures):
+                    path = futures[future]
+                    results_by_path[path] = future.result()
+
+        return [results_by_path[path] for path in resolved_paths]
+
+    def _generate_outputs_for_pdf(
+        self,
+        aggregated: Dict[str, NumberByMonth],
+        months_range: Sequence[Tuple[int, int]],
+        target_dir: Path,
+        folder_slug: str,
+    ) -> List[Dict[str, object]]:
         outputs: List[Dict[str, object]] = []
 
         for spec in self.OUTPUT_SPECS:
@@ -277,91 +345,19 @@ class FichaFinanceiraProcessor:
                 )
                 self._write_output_csv(output_path, values)
             self._log(f"✅ Arquivo gerado em {output_path}")
-            outputs.append({
-                "label": spec["label"],
-                "path": output_path,
-                "months": values,
-            })
+            outputs.append(
+                {
+                    "label": spec["label"],
+                    "path": output_path,
+                    "months": values,
+                }
+            )
 
-        return {
-            "person_name": person_name,
-            "output_folder": target_dir,
-            "outputs": outputs,
-        }
+        return outputs
 
     # ------------------------------------------------------------------
     # Extração de dados
     # ------------------------------------------------------------------
-    def _aggregate_pdfs(
-        self,
-        pdf_paths: Sequence[Path],
-        max_workers: int = 1,
-    ) -> Tuple[Dict[str, NumberByMonth], str]:
-        if not pdf_paths:
-            raise ValueError("Informe ao menos um PDF para processamento.")
-
-        aggregated: Dict[str, NumberByMonth] = {
-            key: {} for key in self._storage_codes()
-        }
-        person_name: Optional[str] = None
-
-        resolved_paths: List[Path] = []
-        for pdf_path in pdf_paths:
-            path = Path(pdf_path)
-            if not path.exists():
-                raise FileNotFoundError(f"Arquivo não encontrado: {path}")
-            resolved_paths.append(path)
-
-        effective_workers = max(1, min(max_workers, len(resolved_paths)))
-        merge_lock = threading.Lock()
-
-        def merge_results(path: Path, parse_result: Dict[str, object]) -> None:
-            nonlocal person_name
-            with merge_lock:
-                parsed_name = parse_result.get("person_name")
-
-                if parsed_name:
-                    if not person_name:
-                        person_name = parsed_name
-                    elif parsed_name.lower() != person_name.lower():
-                        self._log(
-                            "⚠️ Nomes diferentes encontrados nos PDFs. Mantendo o primeiro identificado."
-                        )
-
-                for code, values in parse_result["values"].items():
-                    target = aggregated.setdefault(code, {})
-                    for key, value in values.items():
-                        if key in target and target[key] != value:
-                            self._log(
-                                f"⚠️ Valor duplicado para {code} em {key[1]:02d}/{key[0]}: substituindo {target[key]} por {value}."
-                            )
-                        target[key] = value
-
-        if effective_workers == 1:
-            for path in resolved_paths:
-                self._log(f"📄 Lendo {path.name}")
-                parse_result = self._parse_pdf(path)
-                merge_results(path, parse_result)
-        else:
-            def parse_path(path: Path) -> Tuple[Path, Dict[str, object]]:
-                self._log(f"📄 Lendo {path.name}")
-                return path, self._parse_pdf(path)
-
-            with ThreadPoolExecutor(max_workers=effective_workers) as executor:
-                futures = {
-                    executor.submit(parse_path, path): path
-                    for path in resolved_paths
-                }
-
-                for future in as_completed(futures):
-                    path, parse_result = future.result()
-                    merge_results(path, parse_result)
-
-        if not person_name:
-            person_name = Path(pdf_paths[0]).stem
-            self._log("⚠️ Nome não encontrado no PDF. Usando nome do arquivo.")
-
-        return aggregated, person_name
 
     def _parse_pdf(self, pdf_path: Path) -> Dict[str, object]:
         values: Dict[str, NumberByMonth] = {

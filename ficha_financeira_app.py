@@ -231,34 +231,71 @@ class FichaFinanceiraWindow(QMainWindow):
         self.add_log_message("🚧 Iniciando processamento da ficha financeira...")
 
         try:
-            result = self._processor.generate_csvs(
+            results = self._processor.generate_csvs(
                 self._pdf_paths,
                 start_period,
                 end_period,
                 output_dir,
             )
-            outputs = result.get("outputs", [])
-            if outputs:
-                lines = [f"{item['label']}: {item['path']}" for item in outputs]
-                joined = "\n".join(lines)
-                self.output_label.setText(f"Arquivos gerados:\n{joined}")
-                for item in outputs:
-                    self.add_log_message(
-                        f"📁 {item['label']} salvo em {item['path']}"
+
+            if results:
+                summary_lines: List[str] = ["Arquivos gerados:"]
+                dialog_lines: List[str] = [
+                    "Os arquivos foram gerados para os seguintes PDFs:",
+                ]
+
+                for result in results:
+                    pdf_source = result.get("pdf_path")
+                    pdf_path = Path(pdf_source) if pdf_source else None
+                    pdf_name = (
+                        pdf_path.name if pdf_path else result.get("person_name", "PDF")
                     )
+                    output_folder = result.get("output_folder")
+                    outputs = result.get("outputs", [])
+
+                    summary_lines.append(f"{pdf_name}:")
+                    if output_folder:
+                        summary_lines.append(f"  Pasta: {output_folder}")
+                        self.add_log_message(
+                            f"📂 Diretório para {pdf_name}: {output_folder}"
+                        )
+
+                    if outputs:
+                        for item in outputs:
+                            summary_lines.append(
+                                f"  • {item['label']}: {item['path']}"
+                            )
+                            self.add_log_message(
+                                f"📁 {pdf_name} - {item['label']} salvo em {item['path']}"
+                            )
+                    else:
+                        summary_lines.append(
+                            "  • Nenhum arquivo gerado para o período informado."
+                        )
+                        self.add_log_message(
+                            f"⚠️ {pdf_name} não gerou arquivos para o período informado."
+                        )
+
+                    dialog_lines.append(f"{pdf_name}:")
+                    if outputs:
+                        dialog_lines.extend(
+                            [f"• {item['label']}: {item['path']}" for item in outputs]
+                        )
+                    else:
+                        dialog_lines.append(
+                            "• Nenhum arquivo gerado para o período informado."
+                        )
+                    if output_folder:
+                        dialog_lines.append(f"  Pasta: {output_folder}")
+
+                self.output_label.setText("\n".join(summary_lines))
             else:
                 self.output_label.setText("Nenhum arquivo foi gerado.")
-            self.add_log_message("✅ Processamento concluído com sucesso.")
-
-            if outputs:
-                dialog_lines = [
-                    "Os arquivos foram gerados em:",
-                    *[f"• {item['label']}: {item['path']}" for item in outputs],
-                ]
-            else:
                 dialog_lines = [
                     "Nenhum arquivo foi gerado para o período informado.",
                 ]
+
+            self.add_log_message("✅ Processamento concluído com sucesso.")
             QMessageBox.information(
                 self,
                 "Processamento concluído",

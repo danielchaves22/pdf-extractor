@@ -753,11 +753,57 @@ class FichaFinanceiraProcessor:
             if "Nome" in line and "Matr/Contr" in line:
                 if idx + 1 < len(lines):
                     candidate = lines[idx + 1]
+                    cleaned = self._clean_person_name(candidate)
+                    if cleaned:
+                        return cleaned
                     match = re.match(r"([A-Za-zÀ-ÿ'`\s]+?)\s+\d", candidate)
                     if match:
                         return match.group(1).strip()
                     return candidate.split("  ")[0].strip()
+
+        name_patterns = [
+            r"Nome\s*[:\-]?\s*([A-Za-zÀ-ÿ'`\s]+)",
+            r"NOME\s*[:\-]?\s*([A-Za-zÀ-ÿ'`\s]+)",
+        ]
+
+        for line in lines:
+            for pattern in name_patterns:
+                match = re.search(pattern, line)
+                if match:
+                    cleaned = self._clean_person_name(match.group(1))
+                    if cleaned:
+                        return cleaned
+
+        fallback_patterns = [
+            r"Nome\s*:\s*([A-ZÁÇÃÂÊÔÉÍÓÚÀÈÌÒÙ\s]+)",
+            r"NOME\s*:\s*([A-ZÁÇÃÂÊÔÉÍÓÚÀÈÌÒÙ\s]+)",
+        ]
+
+        for pattern in fallback_patterns:
+            match = re.search(pattern, text)
+            if match:
+                cleaned = self._clean_person_name(match.group(1))
+                if cleaned:
+                    return cleaned
+
         return None
+
+    def _clean_person_name(self, raw_name: str) -> Optional[str]:
+        if not raw_name:
+            return None
+
+        trimmed = raw_name.strip()
+        trimmed = re.sub(r"\s+\d.*$", "", trimmed)
+        trimmed = re.sub(r"[^A-Za-zÀ-ÿ'`\s-]", " ", trimmed)
+        cleaned = re.sub(r"\s+", " ", trimmed).strip()
+
+        if len(cleaned) < 3:
+            return None
+
+        if not re.search(r"[A-Za-zÀ-ÿ]", cleaned):
+            return None
+
+        return cleaned
 
     # ------------------------------------------------------------------
     # Utilidades
@@ -887,14 +933,20 @@ class FichaFinanceiraProcessor:
         horas_50: Iterable[Tuple[int, int, Decimal]],
         horas_100: Iterable[Tuple[int, int, Decimal]],
     ) -> None:
-        header = ["PERIODO", "HORA EXTRA 50", "HORA EXTRA 100"]
-
         horas_50_map = {
             (year, month): value for year, month, value in horas_50
         }
         horas_100_map = {
             (year, month): value for year, month, value in horas_100
         }
+
+        include_extra_100 = any(
+            value != Decimal("0") for value in horas_100_map.values()
+        )
+
+        header = ["PERIODO", "HORA EXTRA 50%"]
+        if include_extra_100:
+            header.append("HORA EXTRA 100%")
 
         ordered_months: List[Tuple[int, int]] = list(months)
 
@@ -913,14 +965,13 @@ class FichaFinanceiraProcessor:
             for year, month in ordered_months:
                 mes_ano = f"{month:02d}/{year}"
                 valor_50 = horas_50_map.get((year, month), Decimal("0"))
-                valor_100 = horas_100_map.get((year, month), Decimal("0"))
-                writer.writerow(
-                    [
-                        mes_ano,
-                        self._format_decimal(valor_50),
-                        self._format_decimal(valor_100),
-                    ]
-                )
+                row = [mes_ano, self._format_decimal(valor_50)]
+
+                if include_extra_100:
+                    valor_100 = horas_100_map.get((year, month), Decimal("0"))
+                    row.append(self._format_decimal(valor_100))
+
+                writer.writerow(row)
 
     def _iterate_months(self, start: date, end: date) -> Iterable[Tuple[int, int]]:
         current_year = start.year

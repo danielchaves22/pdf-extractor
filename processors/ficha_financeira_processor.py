@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import re
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -215,7 +216,7 @@ class FichaFinanceiraProcessor:
 
             self._apply_vacation_adjustments(aggregated)
 
-            folder_slug = self._slugify_name(path.stem)
+            folder_slug = self._build_folder_slug(path)
             target_dir = output_dir_path / folder_slug
             target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1078,6 +1079,15 @@ class FichaFinanceiraProcessor:
             if current_month > 12:
                 current_month = 1
                 current_year += 1
+
+    def _build_folder_slug(self, path: Path) -> str:
+        base_slug = self._slugify_name(path.stem)
+        unique_token = hashlib.blake2s(
+            str(path.resolve()).encode("utf-8"), digest_size=4
+        ).hexdigest()
+        if base_slug:
+            return f"{base_slug}_{unique_token}"
+        return unique_token
 
     def _slugify_name(self, name: str) -> str:
         normalized = unicodedata.normalize("NFKD", name)

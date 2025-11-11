@@ -216,7 +216,7 @@ class FichaFinanceiraProcessor:
 
             self._apply_vacation_adjustments(aggregated)
 
-            folder_slug = self._build_folder_slug(path)
+            folder_slug = self._build_folder_slug(path, person_name)
             target_dir = output_dir_path / folder_slug
             target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1080,8 +1080,10 @@ class FichaFinanceiraProcessor:
                 current_month = 1
                 current_year += 1
 
-    def _build_folder_slug(self, path: Path) -> str:
-        base_slug = self._slugify_name(path.stem)
+    def _build_folder_slug(self, path: Path, person_name: str) -> str:
+        base_slug = self._slugify_name(person_name)
+        if not base_slug:
+            base_slug = self._slugify_name(path.stem)
         unique_token = hashlib.blake2s(
             str(path.resolve()).encode("utf-8"), digest_size=4
         ).hexdigest()

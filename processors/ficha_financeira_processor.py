@@ -202,6 +202,21 @@ class FichaFinanceiraProcessor:
 
         effective_workers = max(1, min(max_workers, len(resolved_paths)))
 
+        start_progress_error_logged = False
+
+        def notify_start(path: Path) -> None:
+            nonlocal start_progress_error_logged
+            if not progress_callback:
+                return
+            try:
+                progress_callback(path, -1, 0)
+            except Exception:
+                if not start_progress_error_logged:
+                    start_progress_error_logged = True
+                    self._log(
+                        "⚠️ Falha ao notificar início do progresso do PDF; ignorando callback."
+                    )
+
         def process_path(path: Path) -> Dict[str, object]:
             self._log(f"📄 Lendo {path.name}")
             parse_result = self._parse_pdf(
@@ -249,13 +264,18 @@ class FichaFinanceiraProcessor:
 
         results_by_path: Dict[Path, Dict[str, object]] = {}
 
+        def run_with_start(path: Path) -> Dict[str, object]:
+            notify_start(path)
+            return process_path(path)
+
         if effective_workers == 1:
             for path in resolved_paths:
-                results_by_path[path] = process_path(path)
+                results_by_path[path] = run_with_start(path)
         else:
             with ThreadPoolExecutor(max_workers=effective_workers) as executor:
                 futures = {
-                    executor.submit(process_path, path): path for path in resolved_paths
+                    executor.submit(run_with_start, path): path
+                    for path in resolved_paths
                 }
 
                 for future in as_completed(futures):

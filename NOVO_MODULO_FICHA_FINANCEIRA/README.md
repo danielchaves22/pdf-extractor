@@ -7,7 +7,7 @@ Este módulo processa as fichas financeiras quadrimestrais e gera arquivos CSV p
 1. Abra a aplicação normalmente. Após o splash screen, selecione **Ficha Financeira**.
 2. Informe o período desejado (mês/ano inicial e final).
 3. Adicione um ou mais PDFs da ficha financeira. Todos os valores encontrados são consolidados, mês a mês.
-4. Clique em **Gerar CSVs da Ficha** para criar os arquivos no diretório do primeiro PDF selecionado.
+4. Clique em **PROCESSAR Ficha Financeira** para criar os arquivos no diretório do primeiro PDF selecionado.
 
 A janela mantém um painel de logs para acompanhar o andamento da extração.
 

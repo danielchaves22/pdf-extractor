@@ -179,6 +179,7 @@ class FichaFinanceiraProcessor:
         output_dir: Path,
         *,
         max_workers: int = 1,
+        progress_callback: Optional[Callable[[Path, int, int], None]] = None,
     ) -> List[Dict[str, object]]:
         """Gera todos os CSVs configurados para a ficha financeira, por PDF."""
 
@@ -203,7 +204,9 @@ class FichaFinanceiraProcessor:
 
         def process_path(path: Path) -> Dict[str, object]:
             self._log(f"📄 Lendo {path.name}")
-            parse_result = self._parse_pdf(path)
+            parse_result = self._parse_pdf(
+                path, progress_callback=progress_callback
+            )
             aggregated: Dict[str, NumberByMonth] = parse_result["values"]
 
             person_name = parse_result.get("person_name")
@@ -361,15 +364,35 @@ class FichaFinanceiraProcessor:
     # Extração de dados
     # ------------------------------------------------------------------
 
-    def _parse_pdf(self, pdf_path: Path) -> Dict[str, object]:
+    def _parse_pdf(
+        self,
+        pdf_path: Path,
+        *,
+        progress_callback: Optional[Callable[[Path, int, int], None]] = None,
+    ) -> Dict[str, object]:
         values: Dict[str, NumberByMonth] = {
             key: {} for key in self._storage_codes()
         }
         person_name: Optional[str] = None
 
         with pdfplumber.open(str(pdf_path)) as pdf:
+            total_pages = len(pdf.pages)
+            progress_error_logged = False
             if pdf.pages:
                 person_name = self._extract_person_name(pdf.pages[0])
+
+            def emit_page_progress(current_page: int) -> None:
+                if not progress_callback or total_pages <= 0:
+                    return
+                try:
+                    progress_callback(pdf_path, current_page, total_pages)
+                except Exception:
+                    nonlocal progress_error_logged
+                    if not progress_error_logged:
+                        progress_error_logged = True
+                        self._log(
+                            "⚠️ Falha ao notificar progresso do PDF; ignorando callback."
+                        )
 
             pending_blocks: List[ActiveBlock] = []
             last_comp_centers: List[float] = []
@@ -378,6 +401,7 @@ class FichaFinanceiraProcessor:
             for page_index, page in enumerate(pdf.pages):
                 words = page.extract_words(use_text_flow=True, keep_blank_chars=False)
                 if not words:
+                    emit_page_progress(page_index + 1)
                     continue
 
                 comp_centers, valor_centers = self._extract_column_centers(words)
@@ -474,6 +498,8 @@ class FichaFinanceiraProcessor:
                             )
 
                 pending_blocks = next_pending
+
+                emit_page_progress(page_index + 1)
 
         return {"values": values, "person_name": person_name}
 

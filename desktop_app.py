@@ -1087,20 +1087,34 @@ class FichaFinanceiraBatchThread(QThread):
         )
 
         try:
-            for pdf_file in self.pdf_files:
+            effective_workers = max(1, min(self.max_workers, len(self.pdf_files)))
+
+            for index, pdf_file in enumerate(self.pdf_files):
                 name = Path(pdf_file).name
-                self.progress_updated.emit(name, 5, "Lendo PDF...")
+                if index < effective_workers:
+                    initial_message = "Preparando para iniciar..."
+                else:
+                    initial_message = "Aguardando disponibilidade na fila..."
+                self.progress_updated.emit(name, 0, initial_message)
 
             def handle_progress(pdf_path: Path, current_page: int, total_pages: int) -> None:
                 filename = Path(pdf_path).name
-                if total_pages <= 0:
+                if current_page <= 0:
                     self.progress_updated.emit(
-                        filename, 95, "Processando páginas..."
+                        filename,
+                        0,
+                        "Preparando processamento...",
                     )
                     return
-                progress_span = max(total_pages, 1)
-                percent = 5 + int(95 * current_page / progress_span)
-                percent = max(5, min(percent, 99))
+                if total_pages <= 0:
+                    self.progress_updated.emit(
+                        filename,
+                        50,
+                        "Processando páginas...",
+                    )
+                    return
+                percent = int(current_page * 100 / max(total_pages, 1))
+                percent = max(1, min(percent, 99))
                 message = f"Processando página {current_page}/{total_pages}"
                 self.progress_updated.emit(filename, percent, message)
 
@@ -1381,11 +1395,14 @@ class BatchProgressDialog(QDialog):
         """Atualiza progresso de um PDF específico"""
         if filename in self.pdf_widgets:
             widgets = self.pdf_widgets[filename]
-            
+
             # Atualiza progresso
             widgets['progress'].setValue(progress)
             widgets['progress'].setToolTip(f"{progress}% concluído")
-            
+
+            waiting_message = message.strip().lower().startswith("aguardando")
+            widgets['progress'].setVisible(not waiting_message)
+
             # Trunca mensagem se muito longa para evitar oscilações
             display_message = message
             if len(display_message) > 25:

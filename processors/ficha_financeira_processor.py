@@ -382,7 +382,7 @@ class FichaFinanceiraProcessor:
                 person_name = self._extract_person_name(pdf.pages[0])
 
             def emit_page_progress(current_page: int) -> None:
-                if not progress_callback or total_pages <= 0:
+                if not progress_callback:
                     return
                 try:
                     progress_callback(pdf_path, current_page, total_pages)
@@ -393,6 +393,8 @@ class FichaFinanceiraProcessor:
                         self._log(
                             "⚠️ Falha ao notificar progresso do PDF; ignorando callback."
                         )
+
+            emit_page_progress(0)
 
             pending_blocks: List[ActiveBlock] = []
             last_comp_centers: List[float] = []

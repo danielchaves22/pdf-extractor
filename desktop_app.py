@@ -1099,7 +1099,14 @@ class FichaFinanceiraBatchThread(QThread):
 
             def handle_progress(pdf_path: Path, current_page: int, total_pages: int) -> None:
                 filename = Path(pdf_path).name
-                if current_page <= 0:
+                if current_page < 0:
+                    self.progress_updated.emit(
+                        filename,
+                        0,
+                        "Worker liberado, preparando processamento...",
+                    )
+                    return
+                if current_page == 0:
                     self.progress_updated.emit(
                         filename,
                         0,
@@ -1421,12 +1428,15 @@ class BatchProgressDialog(QDialog):
             elif "❌" in message:
                 widgets['icon'].setText("❌")
                 widgets['icon'].setStyleSheet("font-size: 16px; color: #f44336;")
+            elif waiting_message:
+                widgets['icon'].setText("⏳")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #ffa726;")
             elif progress > 0:
                 widgets['icon'].setText("🔄")
                 widgets['icon'].setStyleSheet("font-size: 16px; color: #1f538d;")
             else:
-                widgets['icon'].setText("⏳")
-                widgets['icon'].setStyleSheet("font-size: 16px; color: #ffa726;")
+                widgets['icon'].setText("🔄")
+                widgets['icon'].setStyleSheet("font-size: 16px; color: #1f538d;")
     
     @pyqtSlot()
     def handle_batch_completed(self):

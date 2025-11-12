@@ -141,7 +141,7 @@ class FichaFinanceiraWindow(QMainWindow):
         self.output_label = QLabel("Nenhum processamento realizado ainda.")
         self.output_label.setWordWrap(True)
 
-        self.generate_button = QPushButton("Gerar CSVs da Ficha")
+        self.generate_button = QPushButton("PROCESSAR Ficha Financeira")
         self.generate_button.clicked.connect(self._on_generate)
 
         box_layout.addWidget(self.output_label)

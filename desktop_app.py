@@ -1091,12 +1091,26 @@ class FichaFinanceiraBatchThread(QThread):
                 name = Path(pdf_file).name
                 self.progress_updated.emit(name, 5, "Lendo PDF...")
 
+            def handle_progress(pdf_path: Path, current_page: int, total_pages: int) -> None:
+                filename = Path(pdf_path).name
+                if total_pages <= 0:
+                    self.progress_updated.emit(
+                        filename, 95, "Processando páginas..."
+                    )
+                    return
+                progress_span = max(total_pages, 1)
+                percent = 5 + int(95 * current_page / progress_span)
+                percent = max(5, min(percent, 99))
+                message = f"Processando página {current_page}/{total_pages}"
+                self.progress_updated.emit(filename, percent, message)
+
             results = processor.generate_csvs(
                 [Path(path) for path in self.pdf_files],
                 self.start_period,
                 self.end_period,
                 self.output_dir,
                 max_workers=self.max_workers,
+                progress_callback=handle_progress,
             )
 
             sanitized_results: List[Dict[str, object]] = []
@@ -2287,7 +2301,7 @@ class MainWindow(QMainWindow):
             self.config_group.setTitle("📁 Pasta de saída dos CSVs")
             help_label.setText("Selecione a pasta onde os arquivos CSV serão salvos:")
             self.dir_entry.setPlaceholderText("Caminho para a pasta de saída...")
-            self.process_btn.setText("🚀 Gerar CSVs")
+            self.process_btn.setText("🚀 PROCESSAR")
             self.select_btn.setText("📂 Selecionar PDFs da ficha")
             self.drop_zone.label.setText("🎯 Arraste PDFs da ficha financeira aqui ou clique para selecionar")
             self.files_group.setTitle("📎 PDFs da ficha financeira")
